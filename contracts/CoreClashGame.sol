@@ -1,12 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
+/*
+
+ ██████╗ ██████╗ ██████╗ ███████╗     ██████╗██╗      █████╗ ███████╗██╗  ██╗
+██╔════╝██╔═══██╗██╔══██╗██╔════╝    ██╔════╝██║     ██╔══██╗██╔════╝██║  ██║
+██║     ██║   ██║██████╔╝█████╗      ██║     ██║     ███████║███████╗███████║
+██║     ██║   ██║██╔══██╗██╔══╝      ██║     ██║     ██╔══██║╚════██║██╔══██║
+╚██████╗╚██████╔╝██║  ██║███████╗    ╚██████╗███████╗██║  ██║███████║██║  ██║
+ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝     ╚═════╝╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+
+            By Planet Zephros https://planetetn.org/Zephyros
+            Built by ETN_Villain https://x.com/ETN_Villain
+*/
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "./CoreClashRarityLookupTable.sol";
 
-contract CoreClashGame is CoreClashRarityLookupTable {
+contract CoreClashTradingCardGame is CoreClashRarityLookupTable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -334,6 +346,47 @@ function reveal(
 
         _payout(gameId, backendWinner[gameId]);
     }
+
+/*//////////////////////////////////////////////////////////////
+                        GAME CANCELLATION
+//////////////////////////////////////////////////////////////*/
+
+/// @notice Allows the creator to cancel a game that has not been joined yet
+/// @dev Refunds the full stake to player1. Game is marked as settled to prevent reuse.
+/// @param gameId The ID of the game to cancel
+function cancelUnjoinedGame(uint256 gameId) external {
+    Game storage g = games[gameId];
+
+    require(!g.settled, "Game already settled");
+    require(g.player1 == msg.sender, "Only creator can cancel");
+    require(g.player2 == address(0), "Game already joined - cannot cancel");
+
+    g.settled = true;
+
+    if (g.stakeAmount > 0) {
+        IERC20(g.stakeToken).safeTransfer(g.player1, g.stakeAmount);
+    }
+
+    emit GameSettled(gameId, address(0));  // Using address(0) to indicate no winner / refund
+}
+
+/// @notice Allows the contract owner (admin) to force-cancel any unjoined game
+/// @dev Useful for stuck games or emergency situations. Refunds player1.
+/// @param gameId The ID of the game to force cancel
+function forceCancelUnjoinedGame(uint256 gameId) external onlyOwner {
+    Game storage g = games[gameId];
+
+    require(!g.settled, "Game already settled");
+    require(g.player2 == address(0), "Game already joined - cannot force cancel");
+
+    g.settled = true;
+
+    if (g.stakeAmount > 0) {
+        IERC20(g.stakeToken).safeTransfer(g.player1, g.stakeAmount);
+    }
+
+    emit GameSettled(gameId, address(0));
+}
 
     /*//////////////////////////////////////////////////////////////
                           INTERNAL PAYOUTS

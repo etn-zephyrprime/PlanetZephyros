@@ -772,7 +772,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/CoreClashGame.sol": "CoreClashTradingCardGame"
+			"contracts/CoreClashGame.sol": "CoreClashTr"
 		},
 		"evmVersion": "london",
 		"libraries": {},
@@ -843,11 +843,11 @@
 			]
 		},
 		"contracts/CoreClashGame.sol": {
-			"keccak256": "0x5e742ad0edcdfcf86d64cfe6a3b0556d64178f8c6012181c8c959a098a93db57",
+			"keccak256": "0xc1a33d968f32eea86de65bfcebb8ad72ad79e75c11b8029e05f2c98971fad458",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://f737e2cb9faa05633d0cefc4f1948bcd7170a2e412fe9a123dc62755042a15dc",
-				"dweb:/ipfs/QmR1yD8CYcHGewSMigVtgVKt9VfuRtSHRUh9TJ1oAtpPrX"
+				"bzz-raw://2a6f5b9fd4ef006ddf03d89fc69feb01218c83e1db1588de96563c858c24fe26",
+				"dweb:/ipfs/QmdokBJQKDpwrXXkyCEyb7d3wtUY5HNYLjfcwQMMgtnc4a"
 			]
 		},
 		"contracts/CoreClashRarityLookupTable.sol": {
