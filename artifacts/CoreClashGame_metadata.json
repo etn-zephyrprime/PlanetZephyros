@@ -306,6 +306,19 @@
 			{
 				"inputs": [
 					{
+						"internalType": "uint256",
+						"name": "gameId",
+						"type": "uint256"
+					}
+				],
+				"name": "cancelUnjoinedGame",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
 						"internalType": "address",
 						"name": "stakeToken",
 						"type": "address"
@@ -322,6 +335,19 @@
 					}
 				],
 				"name": "createGame",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "gameId",
+						"type": "uint256"
+					}
+				],
+				"name": "forceCancelUnjoinedGame",
 				"outputs": [],
 				"stateMutability": "nonpayable",
 				"type": "function"
@@ -715,18 +741,38 @@
 				]
 			},
 			"kind": "dev",
-			"methods": {},
+			"methods": {
+				"cancelUnjoinedGame(uint256)": {
+					"details": "Refunds the full stake to player1. Game is marked as settled to prevent reuse.",
+					"params": {
+						"gameId": "The ID of the game to cancel"
+					}
+				},
+				"forceCancelUnjoinedGame(uint256)": {
+					"details": "Useful for stuck games or emergency situations. Refunds player1.",
+					"params": {
+						"gameId": "The ID of the game to force cancel"
+					}
+				}
+			},
 			"version": 1
 		},
 		"userdoc": {
 			"kind": "user",
-			"methods": {},
+			"methods": {
+				"cancelUnjoinedGame(uint256)": {
+					"notice": "Allows the creator to cancel a game that has not been joined yet"
+				},
+				"forceCancelUnjoinedGame(uint256)": {
+					"notice": "Allows the contract owner (admin) to force-cancel any unjoined game"
+				}
+			},
 			"version": 1
 		}
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/CoreClashGameV2.sol": "CoreClashGame"
+			"contracts/CoreClashGame.sol": "CoreClashGame"
 		},
 		"evmVersion": "london",
 		"libraries": {},
@@ -796,12 +842,12 @@
 				"dweb:/ipfs/QmRU9nvkrA6V7EBnuwCUpDCkLhCEtEU8KCxz4ANuDhPPcA"
 			]
 		},
-		"contracts/CoreClashGameV2.sol": {
-			"keccak256": "0xb82bf53cc15f5b0baee751fa687cd7491f21046228a7944106318c2a934cbf21",
+		"contracts/CoreClashGame.sol": {
+			"keccak256": "0x45cf60170bbe18da7b1c4dcd17f610822f82e0c8356cab6300d2cd569833a272",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://565fd2740772b4d794d1f341b51e56e448adc03dd3955cae03682778bdc19203",
-				"dweb:/ipfs/QmQ5AHLHQZ7CLSZhAMSRPEp8fsHwa3KbGiTsXxT7pQYfW7"
+				"bzz-raw://b6c07ab389a5b956bfe884e234ba3b064bb286a5abe5d1c32e0d4c2ce6570345",
+				"dweb:/ipfs/QmUoV9rp7e7BujCyPhFxMpygCBvGCQoZDpbEA8wB9QZ6kk"
 			]
 		},
 		"contracts/CoreClashRarityLookupTable.sol": {
