@@ -23,7 +23,7 @@ interface IFeeReflection {
     function processIncomingTokens() external;
 }
 
-contract EreTest is ERC721Enumerable, Ownable, IMintable, ReentrancyGuard {
+contract ASTest is ERC721Enumerable, Ownable, IMintable, ReentrancyGuard {
     using Strings for uint256;
 
     uint256 public constant MAX_SUPPLY = 198;

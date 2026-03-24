@@ -4,18 +4,18 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
+contract AetherScionsFeeReflection is ReentrancyGuard, Ownable {
 
     // ========================
     // 🔸 Immutable Addresses
     // ========================
     address payable public immutable coreWallet; // 0x3Fd2e5B4AC0efF6DFDF2446abddAB3f66B425099 
-    address payable public immutable teamWallet; // 0x4Eb4b9Ce208711A0EA1BefF57C83BD66BC563378 
     address public immutable club;               // 0x94e8718354557079aD0eD6fD7000EBbE84Fa9E4E 
     address public immutable coreToken;          // 0x1DeCBFcE31cA0633504a22Fd1D95D783b94d1128 
     address public immutable WETN;               // 0x138DAFbDA0CCB3d8E39C19edb0510Fc31b7C1c77 
     address public immutable DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD; 
     address public immutable BURN_ADDRESS = address(0); // Add: For true supply reduction
+    address public immutable erevosNFT;
     uint24 private immutable poolFee = 3000;     // For V3 club swap
 
     V3Router internal v3Router; // 0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07
@@ -31,7 +31,7 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
     // ========================
     uint256 public clubBalance;
     uint256 public coreBalance;
-    uint256 public teamBalance;
+    uint256 public nftBalance;
 
     bool public autoBuyAndBurn;
     bool public autoBuyAndBurnCore; // Add: Flag for auto-burning core
@@ -41,7 +41,7 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
     // ========================
     event ClubBuyAndBurn(uint256 clubBurned);
     event CoreBuyAndBurn(uint256 coreBurned); // Add: Event for core burn
-    event FeeProcessed(uint256 amountIn, uint256 coreShare, uint256 teamShare, uint256 clubShare);
+    event FeeProcessed(uint256 amountIn, uint256 coreShare, uint256 clubShare, uint256 nftShare);
     event TokensRescued(address token, uint256 amount, address to);
     event ETHRescued(uint256 amount, address to);
     event NFTWhitelisted(address nftContract);
@@ -58,7 +58,7 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
         address _wetn, 
         address _owner,
         address payable _coreWallet,
-        address payable _teamWallet
+        address _erevosNFT
     ) Ownable(_owner) {
         v3Router = V3Router(v3RouterAddr);
         v2Router = UniswapV2Router(v2RouterAddr); // Add: Set V2 router
@@ -66,9 +66,9 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
         coreToken = _coreToken; // Add: Set core token
         WETN = _wetn;
         coreWallet = _coreWallet;
-        teamWallet = _teamWallet;
         autoBuyAndBurn = true;
         autoBuyAndBurnCore = true; // Add: Default to true
+        erevosNFT = _erevosNFT;
     }
 
     // ========================
@@ -102,10 +102,10 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
     // ========================
     // 🔸 Withdraw
     // ========================
-    function teamWithdraw() external onlyOwner nonReentrant {
+    function withdrawCore() external onlyOwner nonReentrant {
         _processIncomingFee(0);
 
-        uint256 totalToWithdraw = coreBalance + teamBalance;
+        uint256 totalToWithdraw = coreBalance;
         if (totalToWithdraw > 0) {
             IWETN(WETN).withdraw(totalToWithdraw);
         }
@@ -114,12 +114,6 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
             (bool s1, ) = coreWallet.call{value: coreBalance}("");
             require(s1, "Core wallet transfer failed");
             coreBalance = 0;
-        }
-
-        if (teamBalance > 0) {
-            (bool s2, ) = teamWallet.call{value: teamBalance}("");
-            require(s2, "Team wallet transfer failed");
-            teamBalance = 0;
         }
     }
 
@@ -161,21 +155,23 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
         }
                 
         uint256 currentWetn = IWETN(WETN).balanceOf(address(this));
-        uint256 expected = coreBalance + teamBalance + clubBalance;
+        uint256 expected = coreBalance + clubBalance + nftBalance;
         require(currentWetn >= expected, "Balance error");
         
         uint256 incoming = currentWetn - expected;
 
         if(incoming > 0){
-            uint256 corePortion = (incoming * 60) / 100;
+            uint256 corePortion = (incoming * 40) / 100;
             uint256 clubPortion = (incoming * 10) / 100;
-            uint256 teamPortion = incoming - corePortion - clubPortion;
+            uint256 nftPortion = incoming - corePortion - clubPortion;
 
             coreBalance += corePortion;
-            teamBalance += teamPortion;
             clubBalance += clubPortion;
+            nftBalance += nftPortion;
 
-            emit FeeProcessed(incoming, corePortion, teamPortion, clubPortion);
+            emit FeeProcessed(incoming, corePortion, clubPortion, nftPortion);
+
+            _distributeToNFTs();
             
             if(autoBuyAndBurn){
                 _buyAndBurn();
@@ -233,6 +229,24 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
         }
     }
 
+function _distributeToNFTs() internal {
+    if (nftBalance == 0) return;
+
+    uint256 sharePerNFT = nftBalance / 9;
+
+    for (uint256 i = 1; i <= 9; i++) {
+        try IERC721(erevosNFT).ownerOf(i) returns (address owner) {
+            if (owner != address(0)) {
+                IWETN(WETN).transfer(owner, sharePerNFT);
+            }
+        } catch {
+            // skip if token doesn't exist
+        }
+    }
+
+    nftBalance = 0;
+}
+
     // ========================
     // 🔸 Rescue Functions
     // ========================
@@ -256,7 +270,7 @@ contract VerdantKinFeeReflection is ReentrancyGuard, Ownable {
 
         // 🚨 Protect against accidentally rescuing tracked WETN
         if (token == WETN) {
-            uint256 protectedAmount = coreBalance + teamBalance + clubBalance;
+            uint256 protectedAmount = coreBalance + clubBalance + nftBalance;
             require(balance > protectedAmount, "No excess WETN to rescue");
             require(amount <= balance - protectedAmount, "Amount exceeds excess WETN");
         }
@@ -290,6 +304,11 @@ interface IWETN {
     function approve(address spender, uint256 amount) external returns (bool);
     function deposit() external payable;
     function balanceOf(address addr) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool); // ADD THIS
+}
+
+interface IERC721 {
+    function ownerOf(uint256 tokenId) external view returns (address);
 }
 
 interface V3Router {

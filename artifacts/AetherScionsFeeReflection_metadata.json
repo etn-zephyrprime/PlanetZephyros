@@ -628,9 +628,9 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/erevos/ErevosFeeReflection.sol": "VerdantKinFeeReflection"
+			"contracts/erevos/ErevosFeeReflection.sol": "AetherScionsFeeReflection"
 		},
-		"evmVersion": "paris",
+		"evmVersion": "london",
 		"libraries": {},
 		"metadata": {
 			"bytecodeHash": "ipfs"
@@ -675,11 +675,11 @@
 			]
 		},
 		"contracts/erevos/ErevosFeeReflection.sol": {
-			"keccak256": "0x876cfa2e782f6a25482f083d1a69be1bb2a075da3613cbd2a30f915b0a5e5461",
+			"keccak256": "0x63830082f2fdecdde268e42faadf7d11581525697f86e1b439cb3d5701f89ed2",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://42f3be5b6c6723ee88c4a624619224a5a2727a08f9612db3137dd92d3f371788",
-				"dweb:/ipfs/QmQvciWM3ViYrxLnAdkyVNBXS14Wur8a6Ez5qAwxXG7avD"
+				"bzz-raw://48621cc9f353e95fcc7ae7a5c2c08bb1bfdfe4da15fb1a1ebb5ac709b20f9ae3",
+				"dweb:/ipfs/QmbEv55qHCkE7dPeZ4mW92prpDYjMC2ZaqaKSRuRxswpmL"
 			]
 		}
 	},
