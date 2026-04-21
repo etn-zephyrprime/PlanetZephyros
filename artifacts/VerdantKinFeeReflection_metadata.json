@@ -43,8 +43,8 @@
 						"type": "address"
 					},
 					{
-						"internalType": "address payable",
-						"name": "_teamWallet",
+						"internalType": "address",
+						"name": "_erevosNFT",
 						"type": "address"
 					}
 				],
@@ -141,13 +141,13 @@
 					{
 						"indexed": false,
 						"internalType": "uint256",
-						"name": "teamShare",
+						"name": "clubShare",
 						"type": "uint256"
 					},
 					{
 						"indexed": false,
 						"internalType": "uint256",
-						"name": "clubShare",
+						"name": "nftShare",
 						"type": "uint256"
 					}
 				],
@@ -372,6 +372,19 @@
 				"type": "function"
 			},
 			{
+				"inputs": [],
+				"name": "erevosNFT",
+				"outputs": [
+					{
+						"internalType": "address",
+						"name": "",
+						"type": "address"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
 				"inputs": [
 					{
 						"internalType": "address",
@@ -402,6 +415,19 @@
 				"name": "manualBuyAndBurnCore",
 				"outputs": [],
 				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "nftBalance",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
 				"type": "function"
 			},
 			{
@@ -512,39 +538,6 @@
 				"type": "function"
 			},
 			{
-				"inputs": [],
-				"name": "teamBalance",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "teamWallet",
-				"outputs": [
-					{
-						"internalType": "address payable",
-						"name": "",
-						"type": "address"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "teamWithdraw",
-				"outputs": [],
-				"stateMutability": "nonpayable",
-				"type": "function"
-			},
-			{
 				"inputs": [
 					{
 						"internalType": "address",
@@ -574,6 +567,13 @@
 					}
 				],
 				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "withdrawCore",
+				"outputs": [],
+				"stateMutability": "nonpayable",
 				"type": "function"
 			},
 			{
@@ -628,9 +628,9 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/VerdantKinFeeReflection.sol": "VerdantKinFeeReflection"
+			"contracts/erevos/ErevosFeeReflection.sol": "VerdantKinFeeReflection"
 		},
-		"evmVersion": "london",
+		"evmVersion": "paris",
 		"libraries": {},
 		"metadata": {
 			"bytecodeHash": "ipfs"
@@ -651,27 +651,35 @@
 			]
 		},
 		"@openzeppelin/contracts/utils/Context.sol": {
-			"keccak256": "0x7a23f1543270ef457f34f52f8dfae13569c3425245892cb11abef958f16286c1",
+			"keccak256": "0x493033a8d1b176a037b2cc6a04dad01a5c157722049bbecf632ca876224dd4b2",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://8fb48d0348acaaa9019a8a719c973ba149e2e146dece51f907ac4c736e936449",
-				"dweb:/ipfs/QmYewYBYEyBNfZg8JsvzKPp6kV4yQrH6tkAv3rcA9pzgyD"
+				"bzz-raw://6a708e8a5bdb1011c2c381c9a5cfd8a9a956d7d0a9dc1bd8bcdaf52f76ef2f12",
+				"dweb:/ipfs/Qmax9WHBnVsZP46ZxEMNRQpLQnrdE4dK8LehML1Py8FowF"
 			]
 		},
 		"@openzeppelin/contracts/utils/ReentrancyGuard.sol": {
-			"keccak256": "0x11a5a79827df29e915a12740caf62fe21ebe27c08c9ae3e09abe9ee3ba3866d3",
+			"keccak256": "0xa516cbf1c7d15d3517c2d668601ce016c54395bf5171918a14e2686977465f53",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://3cf0c69ab827e3251db9ee6a50647d62c90ba580a4d7bbff21f2bea39e7b2f4a",
-				"dweb:/ipfs/QmZiKwtKU1SBX4RGfQtY7PZfiapbbu6SZ9vizGQD9UHjRA"
+				"bzz-raw://1e1d079e8edfb58efd23a311e315a4807b01b5d1cf153f8fa2d0608b9dec3e99",
+				"dweb:/ipfs/QmTBExeX2SDTkn5xbk5ssbYSx7VqRp9H4Ux1CY4uQM4b9N"
 			]
 		},
-		"contracts/VerdantKinFeeReflection.sol": {
-			"keccak256": "0x245bfcbf54a7052ea84a89fff9621feff5654d3eb5d4b1bd634ab414ba075481",
+		"@openzeppelin/contracts/utils/StorageSlot.sol": {
+			"keccak256": "0xcf74f855663ce2ae00ed8352666b7935f6cddea2932fdf2c3ecd30a9b1cd0e97",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://5588ef32f2424e3f85aa3998f2ee74459de81a210b9abc32222c306c5f788ca6",
-				"dweb:/ipfs/QmXUkZ6V5ozfzLrSyvkE5ZRHshVjmdrtSW82xZV82yzHwr"
+				"bzz-raw://9f660b1f351b757dfe01438e59888f31f33ded3afcf5cb5b0d9bf9aa6f320a8b",
+				"dweb:/ipfs/QmarDJ5hZEgBtCmmrVzEZWjub9769eD686jmzb2XpSU1cM"
+			]
+		},
+		"contracts/erevos/ErevosFeeReflection.sol": {
+			"keccak256": "0x876cfa2e782f6a25482f083d1a69be1bb2a075da3613cbd2a30f915b0a5e5461",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://42f3be5b6c6723ee88c4a624619224a5a2727a08f9612db3137dd92d3f371788",
+				"dweb:/ipfs/QmQvciWM3ViYrxLnAdkyVNBXS14Wur8a6Ez5qAwxXG7avD"
 			]
 		}
 	},

@@ -9,30 +9,6 @@
 				"inputs": [
 					{
 						"internalType": "address",
-						"name": "spender",
-						"type": "address"
-					},
-					{
-						"internalType": "uint256",
-						"name": "amount",
-						"type": "uint256"
-					}
-				],
-				"name": "approve",
-				"outputs": [
-					{
-						"internalType": "bool",
-						"name": "",
-						"type": "bool"
-					}
-				],
-				"stateMutability": "nonpayable",
-				"type": "function"
-			},
-			{
-				"inputs": [
-					{
-						"internalType": "address",
 						"name": "account",
 						"type": "address"
 					}
@@ -49,16 +25,27 @@
 				"type": "function"
 			},
 			{
-				"inputs": [],
-				"name": "decimals",
-				"outputs": [
+				"inputs": [
 					{
-						"internalType": "uint8",
-						"name": "",
-						"type": "uint8"
+						"internalType": "address",
+						"name": "recipient",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
 					}
 				],
-				"stateMutability": "view",
+				"name": "transfer",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "nonpayable",
 				"type": "function"
 			}
 		],
@@ -75,7 +62,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/CoreClashGame.sol": "IERC20"
+			"contracts/erevos/ErevosFeeReflection.sol": "IERC20"
 		},
 		"evmVersion": "london",
 		"libraries": {},
@@ -89,28 +76,36 @@
 		"remappings": []
 	},
 	"sources": {
-		"@openzeppelin/contracts/security/ReentrancyGuard.sol": {
-			"keccak256": "0xa535a5df777d44e945dd24aa43a11e44b024140fc340ad0dfe42acf4002aade1",
+		"@openzeppelin/contracts/access/Ownable.sol": {
+			"keccak256": "0x99d4145b79105cbd46b24fe827d43289bf25d063c106c8d0ae728e6935c675a5",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://41319e7f621f2dc3733511332c4fd032f8e32ad2aa7fd6f665c19741d9941a34",
-				"dweb:/ipfs/QmcYR3bd862GD1Bc7jwrU9bGxrhUu5na1oP964bDCu2id1"
+				"bzz-raw://da1d80dfa32b3638bf076cd6775b8e9c664058fd1e756b476a105a6734126c29",
+				"dweb:/ipfs/QmayEnS2ze2DkSX9EZFJqUgBLsxhGqbssyGfDVBWEP6vCG"
 			]
 		},
-		"contracts/CoreClashGame.sol": {
-			"keccak256": "0x26be17fc8e237eac8df52f77e98a8a161efd2507ca674bc159b70f7c3a88a675",
+		"@openzeppelin/contracts/utils/Context.sol": {
+			"keccak256": "0x493033a8d1b176a037b2cc6a04dad01a5c157722049bbecf632ca876224dd4b2",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://68f29c66202f0c3f5b191780c2ff705d774245bbed98e9ff31cbe05566022fae",
-				"dweb:/ipfs/QmSojxXmAZsA4NKnyy16UjF1XDXd1LWQit9xFJ1ygGZsj1"
+				"bzz-raw://6a708e8a5bdb1011c2c381c9a5cfd8a9a956d7d0a9dc1bd8bcdaf52f76ef2f12",
+				"dweb:/ipfs/Qmax9WHBnVsZP46ZxEMNRQpLQnrdE4dK8LehML1Py8FowF"
 			]
 		},
-		"contracts/CoreClashRarityLookupTable.sol": {
-			"keccak256": "0x5f54f4c9bb1edd05e667f8d1dfa29ca93b7f7737727d982b0556eed13763a1f2",
+		"contracts/erevos/ErevosFeeReflection.sol": {
+			"keccak256": "0x83096dbbd71c031f156cb7ea9685a14118876189801733f9f96f8888965eb93d",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://1618f2da34d5ea0b2611f437eccc0f0b82c223ba5151b4c284944593b658760e",
-				"dweb:/ipfs/QmSiTeLrYgYKPUfeUwFYM12DHtqDacRJpETqhrwU3Wztwe"
+				"bzz-raw://a340d68edff822e5fdb5c98fd3d1b6f5f0fd7e0053ecb9016f4c600632e87a65",
+				"dweb:/ipfs/QmTeV7JENFcRkjMshMX2vtpuNjgSSE4Bn4E6DgeoGkxgmb"
+			]
+		},
+		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/ReentrancyGuard.sol": {
+			"keccak256": "0x11a5a79827df29e915a12740caf62fe21ebe27c08c9ae3e09abe9ee3ba3866d3",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://3cf0c69ab827e3251db9ee6a50647d62c90ba580a4d7bbff21f2bea39e7b2f4a",
+				"dweb:/ipfs/QmZiKwtKU1SBX4RGfQtY7PZfiapbbu6SZ9vizGQD9UHjRA"
 			]
 		}
 	},

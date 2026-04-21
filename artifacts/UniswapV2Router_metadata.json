@@ -82,7 +82,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/VerdantKinFeeReflection.sol": "UniswapV2Router"
+			"contracts/erevos/ErevosFeeReflection.sol": "UniswapV2Router"
 		},
 		"evmVersion": "london",
 		"libraries": {},
@@ -105,27 +105,27 @@
 			]
 		},
 		"@openzeppelin/contracts/utils/Context.sol": {
-			"keccak256": "0x7a23f1543270ef457f34f52f8dfae13569c3425245892cb11abef958f16286c1",
+			"keccak256": "0x493033a8d1b176a037b2cc6a04dad01a5c157722049bbecf632ca876224dd4b2",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://8fb48d0348acaaa9019a8a719c973ba149e2e146dece51f907ac4c736e936449",
-				"dweb:/ipfs/QmYewYBYEyBNfZg8JsvzKPp6kV4yQrH6tkAv3rcA9pzgyD"
+				"bzz-raw://6a708e8a5bdb1011c2c381c9a5cfd8a9a956d7d0a9dc1bd8bcdaf52f76ef2f12",
+				"dweb:/ipfs/Qmax9WHBnVsZP46ZxEMNRQpLQnrdE4dK8LehML1Py8FowF"
 			]
 		},
-		"@openzeppelin/contracts/utils/ReentrancyGuard.sol": {
+		"contracts/erevos/ErevosFeeReflection.sol": {
+			"keccak256": "0x83096dbbd71c031f156cb7ea9685a14118876189801733f9f96f8888965eb93d",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://a340d68edff822e5fdb5c98fd3d1b6f5f0fd7e0053ecb9016f4c600632e87a65",
+				"dweb:/ipfs/QmTeV7JENFcRkjMshMX2vtpuNjgSSE4Bn4E6DgeoGkxgmb"
+			]
+		},
+		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/ReentrancyGuard.sol": {
 			"keccak256": "0x11a5a79827df29e915a12740caf62fe21ebe27c08c9ae3e09abe9ee3ba3866d3",
 			"license": "MIT",
 			"urls": [
 				"bzz-raw://3cf0c69ab827e3251db9ee6a50647d62c90ba580a4d7bbff21f2bea39e7b2f4a",
 				"dweb:/ipfs/QmZiKwtKU1SBX4RGfQtY7PZfiapbbu6SZ9vizGQD9UHjRA"
-			]
-		},
-		"contracts/VerdantKinFeeReflection.sol": {
-			"keccak256": "0x245bfcbf54a7052ea84a89fff9621feff5654d3eb5d4b1bd634ab414ba075481",
-			"license": "MIT",
-			"urls": [
-				"bzz-raw://5588ef32f2424e3f85aa3998f2ee74459de81a210b9abc32222c306c5f788ca6",
-				"dweb:/ipfs/QmXUkZ6V5ozfzLrSyvkE5ZRHshVjmdrtSW82xZV82yzHwr"
 			]
 		}
 	},

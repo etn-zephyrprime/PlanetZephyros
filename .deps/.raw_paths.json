@@ -1,0 +1,22 @@
+{
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/extensions/ERC721Enumerable.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/extensions/ERC721Enumerable.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/ERC721.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/ERC721.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/IERC721.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/IERC721.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/introspection/IERC165.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/introspection/IERC165.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/extensions/IERC721Metadata.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/extensions/IERC721Metadata.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/utils/ERC721Utils.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/utils/ERC721Utils.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/IERC721Receiver.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/IERC721Receiver.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/interfaces/draft-IERC6093.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/interfaces/draft-IERC6093.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/Context.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/Context.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/Strings.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/Strings.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/math/Math.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/math/Math.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/Panic.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/Panic.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/math/SafeCast.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/math/SafeCast.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/math/SignedMath.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/math/SignedMath.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/introspection/ERC165.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/introspection/ERC165.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/ERC721/extensions/IERC721Enumerable.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/ERC721/extensions/IERC721Enumerable.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/common/ERC2981.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/common/ERC2981.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/interfaces/IERC2981.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/interfaces/IERC2981.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/access/Ownable.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/access/Ownable.sol",
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/ReentrancyGuard.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/ReentrancyGuard.sol"
+}
