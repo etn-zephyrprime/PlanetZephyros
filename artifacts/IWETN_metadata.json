@@ -50,7 +50,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/erevos/AetherScionsNFT.sol": "IWETN"
+			"contracts/TheVerdantKinNFT.sol": "IWETN"
 		},
 		"evmVersion": "london",
 		"libraries": {},
@@ -64,12 +64,12 @@
 		"remappings": []
 	},
 	"sources": {
-		"contracts/erevos/AetherScionsNFT.sol": {
-			"keccak256": "0xba5d60eafc3a9b20bd130b7a106c3dd37a12fbf74dd882ea6310e388f5a98d52",
+		"contracts/TheVerdantKinNFT.sol": {
+			"keccak256": "0xc5f07624591b2ef3a38d2516aef8cad7e2444df79d3efa3a4b9c2a320a6570e8",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://143c3509f116113d5cab885a024b95191e156d2af5117c258335956752b6dd4f",
-				"dweb:/ipfs/QmTtyiCrGjYwoVYJAxdt3PHttP5cSQ4VyobCcNyBw13wWq"
+				"bzz-raw://ccb10f248a5af3b1028abb7079d8cb261bff8e6ebe17358d6a839c31b98e5f28",
+				"dweb:/ipfs/QmfDcX1RF9wvDiybuGCs1PG8rTNEDRRe3Ggczmuy5ozbae"
 			]
 		},
 		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/access/Ownable.sol": {
@@ -78,14 +78,6 @@
 			"urls": [
 				"bzz-raw://8ed324d3920bb545059d66ab97d43e43ee85fd3bd52e03e401f020afb0b120f6",
 				"dweb:/ipfs/QmfEckWLmZkDDcoWrkEvMWhms66xwTLff9DDhegYpvHo1a"
-			]
-		},
-		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/interfaces/IERC2981.sol": {
-			"keccak256": "0xafab0e6c71905303c47dd254168cb31efc91f0ae284cde609b0202f97f85469e",
-			"license": "MIT",
-			"urls": [
-				"bzz-raw://824d05aec56eb82a2a3c28eece530dc0792d3a008b09d01444e57cf4aceb0445",
-				"dweb:/ipfs/QmVvqmJ5UobuRU9Q4JMyXxBfzKs2cpjbWXMNpxX4binTX8"
 			]
 		},
 		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/interfaces/draft-IERC6093.sol": {
@@ -150,14 +142,6 @@
 			"urls": [
 				"bzz-raw://dbc1d283ee77da43d61661b5ba1adeb427d6a6224335494a9a857dce41d9f1d6",
 				"dweb:/ipfs/QmTnA35z7XzkxFSRUqB6CGVH1nhmvajwnDNfA5PiKmYuCi"
-			]
-		},
-		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/token/common/ERC2981.sol": {
-			"keccak256": "0xa33062c6e0675a74a27b06a4ae4c6ad4d3b7219e27d9c146a4ac57295096d393",
-			"license": "MIT",
-			"urls": [
-				"bzz-raw://777543d88013fdd0ee7f47ac619fb13a1993bb667675d8816fde024f73cfbf2d",
-				"dweb:/ipfs/QmfDS9uL1XZ2oUe1PH8eRCRyu3Hf98cK8ksGf4Ww7kg5zv"
 			]
 		},
 		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/Context.sol": {

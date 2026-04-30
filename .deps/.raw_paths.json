@@ -18,5 +18,22 @@
   "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/token/common/ERC2981.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/token/common/ERC2981.sol",
   "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/interfaces/IERC2981.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/interfaces/IERC2981.sol",
   "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/access/Ownable.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/access/Ownable.sol",
-  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/ReentrancyGuard.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/ReentrancyGuard.sol"
+  "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v5.4.0/contracts/utils/ReentrancyGuard.sol": ".deps/github/OpenZeppelin/openzeppelin-contracts@v5.4.0/contracts/utils/ReentrancyGuard.sol",
+  "@openzeppelin/contracts@4.9.0/token/ERC721/extensions/ERC721Enumerable.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/token/ERC721/extensions/ERC721Enumerable.sol",
+  "@openzeppelin/contracts@4.9.0/token/ERC721/ERC721.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/token/ERC721/ERC721.sol",
+  "@openzeppelin/contracts@4.9.0/token/ERC721/IERC721.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/token/ERC721/IERC721.sol",
+  "@openzeppelin/contracts@4.9.0/utils/introspection/IERC165.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/introspection/IERC165.sol",
+  "@openzeppelin/contracts@4.9.0/token/ERC721/IERC721Receiver.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/token/ERC721/IERC721Receiver.sol",
+  "@openzeppelin/contracts@4.9.0/token/ERC721/extensions/IERC721Metadata.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/token/ERC721/extensions/IERC721Metadata.sol",
+  "@openzeppelin/contracts@4.9.0/utils/Address.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/Address.sol",
+  "@openzeppelin/contracts@4.9.0/utils/Context.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/Context.sol",
+  "@openzeppelin/contracts@4.9.0/utils/Strings.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/Strings.sol",
+  "@openzeppelin/contracts@4.9.0/utils/math/Math.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/math/Math.sol",
+  "@openzeppelin/contracts@4.9.0/utils/math/SignedMath.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/math/SignedMath.sol",
+  "@openzeppelin/contracts@4.9.0/utils/introspection/ERC165.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/introspection/ERC165.sol",
+  "@openzeppelin/contracts@4.9.0/token/ERC721/extensions/IERC721Enumerable.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/token/ERC721/extensions/IERC721Enumerable.sol",
+  "@openzeppelin/contracts@4.9.0/access/Ownable.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/access/Ownable.sol",
+  "@openzeppelin/contracts@4.9.0/utils/ReentrancyGuard.sol": ".deps/npm/@openzeppelin/contracts@4.9.0/utils/ReentrancyGuard.sol",
+  "https://github.com/OpenZeppelin//contracts/token/ERC721/extensions/ERC721Enumerable.sol": ".deps/http/github.com/OpenZeppelin//contracts/token/ERC721/extensions/ERC721Enumerable.sol",
+  "https://github.com/OpenZeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol": ".deps/http/github.com/OpenZeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol"
 }
