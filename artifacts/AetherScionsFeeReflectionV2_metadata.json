@@ -9,17 +9,7 @@
 				"inputs": [
 					{
 						"internalType": "address",
-						"name": "v3RouterAddr",
-						"type": "address"
-					},
-					{
-						"internalType": "address",
 						"name": "v2RouterAddr",
-						"type": "address"
-					},
-					{
-						"internalType": "address",
-						"name": "_club",
 						"type": "address"
 					},
 					{
@@ -84,19 +74,6 @@
 					{
 						"indexed": false,
 						"internalType": "uint256",
-						"name": "clubBurned",
-						"type": "uint256"
-					}
-				],
-				"name": "ClubBuyAndBurn",
-				"type": "event"
-			},
-			{
-				"anonymous": false,
-				"inputs": [
-					{
-						"indexed": false,
-						"internalType": "uint256",
 						"name": "coreBurned",
 						"type": "uint256"
 					}
@@ -136,12 +113,6 @@
 						"indexed": false,
 						"internalType": "uint256",
 						"name": "coreShare",
-						"type": "uint256"
-					},
-					{
-						"indexed": false,
-						"internalType": "uint256",
-						"name": "clubShare",
 						"type": "uint256"
 					},
 					{
@@ -243,19 +214,6 @@
 			},
 			{
 				"inputs": [],
-				"name": "DEAD_ADDRESS",
-				"outputs": [
-					{
-						"internalType": "address",
-						"name": "",
-						"type": "address"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
 				"name": "WETN",
 				"outputs": [
 					{
@@ -282,51 +240,12 @@
 			},
 			{
 				"inputs": [],
-				"name": "autoBuyAndBurn",
-				"outputs": [
-					{
-						"internalType": "bool",
-						"name": "",
-						"type": "bool"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
 				"name": "autoBuyAndBurnCore",
 				"outputs": [
 					{
 						"internalType": "bool",
 						"name": "",
 						"type": "bool"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "club",
-				"outputs": [
-					{
-						"internalType": "address",
-						"name": "",
-						"type": "address"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "clubBalance",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "",
-						"type": "uint256"
 					}
 				],
 				"stateMutability": "view",
@@ -401,13 +320,6 @@
 					}
 				],
 				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "manualBuyAndBurn",
-				"outputs": [],
-				"stateMutability": "nonpayable",
 				"type": "function"
 			},
 			{
@@ -507,19 +419,6 @@
 					}
 				],
 				"name": "rescueTokens",
-				"outputs": [],
-				"stateMutability": "nonpayable",
-				"type": "function"
-			},
-			{
-				"inputs": [
-					{
-						"internalType": "bool",
-						"name": "_autoBuyAndBurn",
-						"type": "bool"
-					}
-				],
-				"name": "setAutoBuyAndBurn",
 				"outputs": [],
 				"stateMutability": "nonpayable",
 				"type": "function"
@@ -628,7 +527,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contracts/erevos/ErevosFeeReflection.sol": "AetherScionsFeeReflectionV2"
+			"contracts/erevos/AetherScionsFeeReflectionV3.sol": "AetherScionsFeeReflectionV2"
 		},
 		"evmVersion": "london",
 		"libraries": {},
@@ -642,28 +541,28 @@
 		"remappings": []
 	},
 	"sources": {
-		"@openzeppelin/contracts/access/Ownable.sol": {
-			"keccak256": "0x99d4145b79105cbd46b24fe827d43289bf25d063c106c8d0ae728e6935c675a5",
+		"contracts/erevos/AetherScionsFeeReflectionV3.sol": {
+			"keccak256": "0x1aa3ee86b942e3507290524d755685ae685033f342c057332cafa69fe4948102",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://da1d80dfa32b3638bf076cd6775b8e9c664058fd1e756b476a105a6734126c29",
-				"dweb:/ipfs/QmayEnS2ze2DkSX9EZFJqUgBLsxhGqbssyGfDVBWEP6vCG"
+				"bzz-raw://be3b8979481e8bab595ffc03a60a434da028fa9bf22217cce772190ba1abac1d",
+				"dweb:/ipfs/QmSRpRW6S72eqjkLogronwMrPfnmqSLhubWHjvA1gnnjpk"
 			]
 		},
-		"@openzeppelin/contracts/utils/Context.sol": {
+		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/access/Ownable.sol": {
+			"keccak256": "0xff6d0bb2e285473e5311d9d3caacb525ae3538a80758c10649a4d61029b017bb",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://8ed324d3920bb545059d66ab97d43e43ee85fd3bd52e03e401f020afb0b120f6",
+				"dweb:/ipfs/QmfEckWLmZkDDcoWrkEvMWhms66xwTLff9DDhegYpvHo1a"
+			]
+		},
+		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/Context.sol": {
 			"keccak256": "0x493033a8d1b176a037b2cc6a04dad01a5c157722049bbecf632ca876224dd4b2",
 			"license": "MIT",
 			"urls": [
 				"bzz-raw://6a708e8a5bdb1011c2c381c9a5cfd8a9a956d7d0a9dc1bd8bcdaf52f76ef2f12",
 				"dweb:/ipfs/Qmax9WHBnVsZP46ZxEMNRQpLQnrdE4dK8LehML1Py8FowF"
-			]
-		},
-		"contracts/erevos/ErevosFeeReflection.sol": {
-			"keccak256": "0x83096dbbd71c031f156cb7ea9685a14118876189801733f9f96f8888965eb93d",
-			"license": "MIT",
-			"urls": [
-				"bzz-raw://a340d68edff822e5fdb5c98fd3d1b6f5f0fd7e0053ecb9016f4c600632e87a65",
-				"dweb:/ipfs/QmTeV7JENFcRkjMshMX2vtpuNjgSSE4Bn4E6DgeoGkxgmb"
 			]
 		},
 		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/ReentrancyGuard.sol": {

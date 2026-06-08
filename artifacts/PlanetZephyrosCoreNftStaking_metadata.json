@@ -1,6 +1,6 @@
 {
 	"compiler": {
-		"version": "0.8.24+commit.e11b9ed9"
+		"version": "0.8.20+commit.a1b79de6"
 	},
 	"language": "Solidity",
 	"output": {
@@ -80,6 +80,32 @@
 				],
 				"name": "SafeERC20FailedOperation",
 				"type": "error"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "admin",
+						"type": "address"
+					}
+				],
+				"name": "AdminAdded",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "admin",
+						"type": "address"
+					}
+				],
+				"name": "AdminRemoved",
+				"type": "event"
 			},
 			{
 				"anonymous": false,
@@ -444,6 +470,19 @@
 				"inputs": [
 					{
 						"internalType": "address",
+						"name": "newAdmin",
+						"type": "address"
+					}
+				],
+				"name": "addAdmin",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
 						"name": "",
 						"type": "address"
 					},
@@ -485,19 +524,6 @@
 				"name": "batchSetApprovedTokenIds",
 				"outputs": [],
 				"stateMutability": "nonpayable",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "blocksRemaining",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
 				"type": "function"
 			},
 			{
@@ -601,19 +627,6 @@
 			},
 			{
 				"inputs": [],
-				"name": "estimatedSecondsRemaining",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
 				"name": "exit",
 				"outputs": [],
 				"stateMutability": "nonpayable",
@@ -690,52 +703,16 @@
 				"inputs": [
 					{
 						"internalType": "address",
-						"name": "account",
-						"type": "address"
-					}
-				],
-				"name": "getUserAccounting",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "rewardDebt",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "unclaimedRewards",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [
-					{
-						"internalType": "address",
-						"name": "account",
-						"type": "address"
-					}
-				],
-				"name": "getUserNFTs",
-				"outputs": [
-					{
-						"components": [
-							{
-								"internalType": "address",
-								"name": "collection",
-								"type": "address"
-							},
-							{
-								"internalType": "uint256",
-								"name": "tokenId",
-								"type": "uint256"
-							}
-						],
-						"internalType": "struct PlanetZephyrosCoreNftStaking.StakedNFT[]",
 						"name": "",
-						"type": "tuple[]"
+						"type": "address"
+					}
+				],
+				"name": "isAdmin",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
 					}
 				],
 				"stateMutability": "view",
@@ -882,74 +859,6 @@
 				"type": "function"
 			},
 			{
-				"inputs": [
-					{
-						"internalType": "address",
-						"name": "account",
-						"type": "address"
-					},
-					{
-						"internalType": "uint256",
-						"name": "withdrawAmount",
-						"type": "uint256"
-					}
-				],
-				"name": "pendingEarlyCorePenalty",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "totalPenalty",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "penaltyToPool",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "penaltyBurned",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "returnedAmount",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [
-					{
-						"internalType": "address",
-						"name": "account",
-						"type": "address"
-					}
-				],
-				"name": "pendingEarlyRewardSlash",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "rewardBeforeSlash",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "slashAmount",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "rewardAfterSlash",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
 				"inputs": [],
 				"name": "queuedRewards",
 				"outputs": [
@@ -981,6 +890,19 @@
 					}
 				],
 				"name": "recoverERC20",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "admin",
+						"type": "address"
+					}
+				],
+				"name": "removeAdmin",
 				"outputs": [],
 				"stateMutability": "nonpayable",
 				"type": "function"
@@ -1018,19 +940,6 @@
 			{
 				"inputs": [],
 				"name": "rewardPerBlock",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "",
-						"type": "uint256"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [],
-				"name": "rewardsRemainingBySchedule",
 				"outputs": [
 					{
 						"internalType": "uint256",
@@ -1336,18 +1245,18 @@
 			"bytecodeHash": "ipfs"
 		},
 		"optimizer": {
-			"enabled": false,
+			"enabled": true,
 			"runs": 200
 		},
 		"remappings": []
 	},
 	"sources": {
 		"contracts/ZephyrosStaking/ZephyrosStaking.sol": {
-			"keccak256": "0x800b3c95ac7d5c9cb3e7370cd7672a78d5b2dafa4ad002ca0a43631220ebaa92",
+			"keccak256": "0xd5bc4d9ab94732c0640155b46a1653d2f32d03cf34fe164445d844bfd3438f87",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://dbe39b6438f8b1e703ee4b917153853d03aa46f1f9b3bf1cac46e286fd9020ea",
-				"dweb:/ipfs/QmQd88YVKfe3Dwc6C1RMn7BKqJBkoRKddTgDVryGsBaQpZ"
+				"bzz-raw://7d283f79fcdeb7a43505cd2dd244ddfffd1fe0d4ccdaf5f93fce199b12f44964",
+				"dweb:/ipfs/QmUjvk75wx4CDyUpaQBCjvg34tUwsGNR7gcv7G98TpZGF3"
 			]
 		},
 		"https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.0.2/contracts/access/Ownable.sol": {

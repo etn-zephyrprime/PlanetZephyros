@@ -1,40 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/*
-    Planet Zephyros CORE + NFT Staking
-
-    Block-based reward version for Electroneum-style 5 second blocks.
-
-    Main rules:
-    - Users must stake at least 1 eligible NFT before staking CORE.
-    - Users must have at least 1 eligible NFT and CORE staked to earn rewards.
-    - Users may stake up to 10,000 CORE.
-    - Users may withdraw any amount of CORE at any time.
-    - Every CORE deposit restarts the 60 day early-withdrawal penalty timer for the user's whole CORE position.
-      This prevents users from aging a tiny/NFT-only position and then adding CORE penalty-free.
-    - Early CORE withdrawal penalty: 15% of withdrawn CORE.
-        - 2/3 of that penalty stays in this contract and is added back into rewards.
-        - 1/3 is burned through the CORE token's burn function.
-    - Early reward penalty: 50% of earned CORE rewards.
-        - The slashed reward amount stays in this contract and is added back into rewards.
-    - NFT boosts:
-        1 NFT  = 1.00x
-        2 NFTs = 1.10x
-        3 NFTs = 1.20x
-        4 NFTs = 1.30x
-    - Max 4 NFTs per user.
-    - Collections can be whitelisted in either:
-        AllTokensAllowed mode, or
-        OnlyApprovedTokenIds mode.
-    - Background names can be whitelisted for off-chain/admin tracking, but the contract cannot read JSON metadata directly.
-
-    Initial funding example:
-    - Electroneum target block time: 5 seconds
-    - 365 days ~= 6,307,200 blocks
-    - fundRewards(20_000 ether, 6_307_200)
-*/
-
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.0.2/contracts/token/ERC20/IERC20.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.0.2/contracts/token/ERC20/utils/SafeERC20.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.0.2/contracts/token/ERC721/IERC721.sol";
@@ -46,7 +12,7 @@ interface ICoreToken is IERC20 {
     function burn(uint256 amount) external;
 }
 
-contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiver {
+contract CoreAscensionV2 is Ownable, ReentrancyGuard, IERC721Receiver {
     using SafeERC20 for IERC20;
     using SafeERC20 for ICoreToken;
 
@@ -98,6 +64,10 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         StakedNFT[] nfts;
     }
 
+    // ==================== ADMIN WHITELIST ====================
+    mapping(address => bool) public isAdmin;
+
+    // ==================== STATE VARIABLES ====================
     mapping(address => CollectionConfig) public collections;
     mapping(address => mapping(uint256 => bool)) public approvedTokenId;
     mapping(bytes32 => bool) public whitelistedBackgroundHash;
@@ -113,41 +83,25 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
     uint256 public rewardPerBlock;
     uint256 public endBlock;
 
-    // Rewards or penalties that are inside the contract but not currently scheduled.
-    // This prevents stranded/slashed rewards from being lost if they arrive after endBlock
-    // or when no active reward schedule exists.
     uint256 public queuedRewards;
-
     uint256 public totalRewardsFunded;
     uint256 public totalRewardsPaid;
     uint256 public totalRewardsSlashedToPool;
     uint256 public totalCorePenaltyToPool;
     uint256 public totalCoreBurned;
 
+    // Events
+    event AdminAdded(address indexed admin);
+    event AdminRemoved(address indexed admin);
     event CollectionConfigured(address indexed collection, bool whitelisted, EligibilityMode mode);
     event TokenEligibilitySet(address indexed collection, uint256 indexed tokenId, bool eligible);
     event BackgroundWhitelistSet(string background, bool allowed);
-
-    event RewardsFunded(
-        address indexed funder,
-        uint256 amount,
-        uint256 queuedRewardsUsed,
-        uint256 durationBlocks,
-        uint256 rewardPerBlock,
-        uint256 endBlock
-    );
+    event RewardsFunded(address indexed funder, uint256 amount, uint256 queuedRewardsUsed, uint256 durationBlocks, uint256 rewardPerBlock, uint256 endBlock);
     event PenaltyAddedToRewards(uint256 amount, bool queued);
-
     event NFTStaked(address indexed user, address indexed collection, uint256 indexed tokenId);
     event NFTWithdrawn(address indexed user, address indexed collection, uint256 indexed tokenId);
     event CoreStaked(address indexed user, uint256 amount);
-    event CoreWithdrawn(
-        address indexed user,
-        uint256 requestedAmount,
-        uint256 returnedAmount,
-        uint256 penaltyToPool,
-        uint256 penaltyBurned
-    );
+    event CoreWithdrawn(address indexed user, uint256 requestedAmount, uint256 returnedAmount, uint256 penaltyToPool, uint256 penaltyBurned);
     event RewardPaid(address indexed user, uint256 paidAmount, uint256 slashedAmount);
     event Exited(address indexed user);
 
@@ -155,23 +109,46 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         require(coreToken != address(0), "CORE0");
         core = ICoreToken(coreToken);
         lastRewardBlock = block.number;
+        isAdmin[msg.sender] = true; // Owner is admin by default
     }
 
     // =============================================================
-    // Admin
+    // Admin Management
+    // =============================================================
+
+    modifier onlyAdmin() {
+        require(isAdmin[msg.sender] || msg.sender == owner(), "Not admin");
+        _;
+    }
+
+    function addAdmin(address newAdmin) external onlyOwner {
+        require(newAdmin != address(0), "ZERO");
+        require(!isAdmin[newAdmin], "ALREADY_ADMIN");
+        isAdmin[newAdmin] = true;
+        emit AdminAdded(newAdmin);
+    }
+
+    function removeAdmin(address admin) external onlyOwner {
+        require(isAdmin[admin], "NOT_ADMIN");
+        isAdmin[admin] = false;
+        emit AdminRemoved(admin);
+    }
+
+    // =============================================================
+    // Admin Functions
     // =============================================================
 
     function configureCollection(
         address collection,
         bool whitelisted,
         EligibilityMode mode
-    ) external onlyOwner {
+    ) external onlyAdmin {
         require(collection != address(0), "COL0");
         collections[collection] = CollectionConfig({whitelisted: whitelisted, mode: mode});
         emit CollectionConfigured(collection, whitelisted, mode);
     }
 
-    function setApprovedTokenId(address collection, uint256 tokenId, bool eligible) external onlyOwner {
+    function setApprovedTokenId(address collection, uint256 tokenId, bool eligible) external onlyAdmin {
         require(collection != address(0), "COL0");
         approvedTokenId[collection][tokenId] = eligible;
         emit TokenEligibilitySet(collection, tokenId, eligible);
@@ -181,7 +158,7 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         address collection,
         uint256[] calldata tokenIds,
         bool eligible
-    ) external onlyOwner {
+    ) external onlyAdmin {
         require(collection != address(0), "COL0");
         for (uint256 i = 0; i < tokenIds.length; i++) {
             approvedTokenId[collection][tokenIds[i]] = eligible;
@@ -189,20 +166,13 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         }
     }
 
-    function setWhitelistedBackground(string calldata background, bool allowed) external onlyOwner {
+    function setWhitelistedBackground(string calldata background, bool allowed) external onlyAdmin {
         bytes32 hash = keccak256(bytes(background));
         whitelistedBackgroundHash[hash] = allowed;
         emit BackgroundWhitelistSet(background, allowed);
     }
 
-    function isBackgroundWhitelisted(string calldata background) external view returns (bool) {
-        return whitelistedBackgroundHash[keccak256(bytes(background))];
-    }
-
-    // Owner must approve this contract to spend CORE before calling.
-    // Initial 12 month funding example on 5 second blocks:
-    // fundRewards(20_000 ether, 6_307_200)
-    function fundRewards(uint256 amount, uint256 durationBlocks) external onlyOwner nonReentrant updateReward(address(0)) {
+    function fundRewards(uint256 amount, uint256 durationBlocks) external onlyAdmin nonReentrant updateReward(address(0)) {
         require(amount > 0 || queuedRewards > 0, "NOREW");
         require(durationBlocks > 0, "DUR0");
 
@@ -211,13 +181,12 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
             totalRewardsFunded += amount;
         }
 
-        uint256 remainingRewards;
+        uint256 remainingRewards = 0;
         if (block.number < endBlock) {
             remainingRewards = (endBlock - block.number) * rewardPerBlock;
         }
 
-        uint256 queued = queuedRewards;
-        uint256 rewardsToSchedule = amount + queued + remainingRewards;
+        uint256 rewardsToSchedule = amount + queuedRewards + remainingRewards;
         require(rewardsToSchedule > 0, "NOSCH");
 
         rewardPerBlock = rewardsToSchedule / durationBlocks;
@@ -227,16 +196,16 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         lastRewardBlock = block.number;
         endBlock = block.number + durationBlocks;
 
-        emit RewardsFunded(msg.sender, amount, queued, durationBlocks, rewardPerBlock, endBlock);
+        emit RewardsFunded(msg.sender, amount, queuedRewards, durationBlocks, rewardPerBlock, endBlock);
     }
 
-    function recoverERC20(address token, address to, uint256 amount) external onlyOwner {
+    function recoverERC20(address token, address to, uint256 amount) external onlyAdmin {
         require(token != address(core), "CORE");
         require(to != address(0), "TO0");
         IERC20(token).safeTransfer(to, amount);
     }
 
-    function rescueUnstakedNFT(address collection, uint256 tokenId, address to) external onlyOwner nonReentrant {
+    function rescueUnstakedNFT(address collection, uint256 tokenId, address to) external onlyAdmin nonReentrant {
         require(collection != address(0), "COL0");
         require(to != address(0), "TO0");
         require(nftStaker[collection][tokenId] == address(0), "STAKED");
@@ -271,8 +240,6 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         require(user.nfts.length >= 1, "NFTREQ");
         require(user.coreStaked + amount <= MAX_CORE_STAKE, "MAXCORE");
 
-        // Important anti-bypass rule:
-        // every CORE deposit restarts the early penalty window for the whole CORE position.
         user.entryTime = block.timestamp;
 
         user.coreStaked += amount;
@@ -295,15 +262,14 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         require(amount <= user.coreStaked, "STAKE");
         require(user.nfts.length >= 1, "NFTREQ");
 
-        // Claim first while reward accounting still reflects the pre-withdrawal stake.
         _claim(msg.sender);
 
         user.coreStaked -= amount;
         totalCoreStaked -= amount;
 
         uint256 returnedAmount = amount;
-        uint256 penaltyToPool;
-        uint256 penaltyBurned;
+        uint256 penaltyToPool = 0;
+        uint256 penaltyBurned = 0;
 
         if (_isEarly(user.entryTime)) {
             uint256 totalPenalty = (amount * EARLY_STAKE_PENALTY_BPS) / BPS;
@@ -314,18 +280,11 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
             totalCorePenaltyToPool += penaltyToPool;
             totalCoreBurned += penaltyBurned;
 
-            if (penaltyToPool > 0) {
-                _addPenaltyToRewards(penaltyToPool);
-            }
-
-            if (penaltyBurned > 0) {
-                core.burn(penaltyBurned);
-            }
+            if (penaltyToPool > 0) _addPenaltyToRewards(penaltyToPool);
+            if (penaltyBurned > 0) core.burn(penaltyBurned);
         }
 
-        if (user.coreStaked == 0) {
-            user.entryTime = 0;
-        }
+        if (user.coreStaked == 0) user.entryTime = 0;
 
         _refreshUserWeight(msg.sender);
         core.safeTransfer(msg.sender, returnedAmount);
@@ -355,13 +314,12 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         UserInfo storage user = users[msg.sender];
         require(user.coreStaked > 0 || user.nfts.length > 0, "NOPOS");
 
-        // Claim first while reward accounting still reflects the pre-exit stake.
         _claim(msg.sender);
 
         uint256 amount = user.coreStaked;
         uint256 returnedAmount = amount;
-        uint256 penaltyToPool;
-        uint256 penaltyBurned;
+        uint256 penaltyToPool = 0;
+        uint256 penaltyBurned = 0;
 
         if (amount > 0) {
             user.coreStaked = 0;
@@ -376,19 +334,13 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
                 totalCorePenaltyToPool += penaltyToPool;
                 totalCoreBurned += penaltyBurned;
 
-                if (penaltyToPool > 0) {
-                    _addPenaltyToRewards(penaltyToPool);
-                }
-
-                if (penaltyBurned > 0) {
-                    core.burn(penaltyBurned);
-                }
+                if (penaltyToPool > 0) _addPenaltyToRewards(penaltyToPool);
+                if (penaltyBurned > 0) core.burn(penaltyBurned);
             }
         }
 
         uint256 nftCount = user.nfts.length;
         StakedNFT[] memory nftList = new StakedNFT[](nftCount);
-
         for (uint256 i = 0; i < nftCount; i++) {
             nftList[i] = user.nfts[i];
             nftStaker[nftList[i].collection][nftList[i].tokenId] = address(0);
@@ -399,9 +351,7 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
 
         _refreshUserWeight(msg.sender);
 
-        if (returnedAmount > 0) {
-            core.safeTransfer(msg.sender, returnedAmount);
-        }
+        if (returnedAmount > 0) core.safeTransfer(msg.sender, returnedAmount);
 
         for (uint256 i = 0; i < nftList.length; i++) {
             IERC721(nftList[i].collection).safeTransferFrom(address(this), msg.sender, nftList[i].tokenId);
@@ -423,42 +373,23 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         return approvedTokenId[collection][tokenId];
     }
 
-    function getUser(address account)
-        external
-        view
-        returns (
-            uint256 coreStaked,
-            uint256 nftCount,
-            uint256 rewardWeight,
-            uint256 entryTime,
-            uint256 pendingRewards,
-            bool currentlyEarly,
-            uint256 boostBps
-        )
-    {
-        coreStaked = users[account].coreStaked;
-        nftCount = users[account].nfts.length;
-        rewardWeight = users[account].rewardWeight;
-        entryTime = users[account].entryTime;
+    function getUser(address account) external view returns (
+        uint256 coreStaked,
+        uint256 nftCount,
+        uint256 rewardWeight,
+        uint256 entryTime,
+        uint256 pendingRewards,
+        bool currentlyEarly,
+        uint256 boostBps
+    ) {
+        UserInfo storage user = users[account];
+        coreStaked = user.coreStaked;
+        nftCount = user.nfts.length;
+        rewardWeight = user.rewardWeight;
+        entryTime = user.entryTime;
         pendingRewards = earned(account);
         currentlyEarly = _isEarly(entryTime);
         boostBps = _boostForNFTCount(nftCount);
-    }
-
-    function getUserAccounting(address account)
-        external
-        view
-        returns (
-            uint256 rewardDebt,
-            uint256 unclaimedRewards
-        )
-    {
-        rewardDebt = users[account].rewardDebt;
-        unclaimedRewards = users[account].unclaimedRewards;
-    }
-
-    function getUserNFTs(address account) external view returns (StakedNFT[] memory) {
-        return users[account].nfts;
     }
 
     function earned(address account) public view returns (uint256) {
@@ -468,66 +399,16 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
         return user.unclaimedRewards + accumulated - user.rewardDebt;
     }
 
+    function isBackgroundWhitelisted(string calldata background) external view returns (bool) {
+        return whitelistedBackgroundHash[keccak256(bytes(background))];
+    }
+
     function lastRewardBlockApplicable() public view returns (uint256) {
         return block.number < endBlock ? block.number : endBlock;
     }
 
-    function pendingEarlyCorePenalty(address account, uint256 withdrawAmount)
-        external
-        view
-        returns (
-            uint256 totalPenalty,
-            uint256 penaltyToPool,
-            uint256 penaltyBurned,
-            uint256 returnedAmount
-        )
-    {
-        UserInfo storage user = users[account];
-        require(withdrawAmount <= user.coreStaked, "STAKE");
-
-        if (!_isEarly(user.entryTime)) {
-            return (0, 0, 0, withdrawAmount);
-        }
-
-        totalPenalty = (withdrawAmount * EARLY_STAKE_PENALTY_BPS) / BPS;
-        penaltyToPool = (totalPenalty * PENALTY_TO_POOL_NUM) / PENALTY_TO_POOL_DEN;
-        penaltyBurned = totalPenalty - penaltyToPool;
-        returnedAmount = withdrawAmount - totalPenalty;
-    }
-
-    function pendingEarlyRewardSlash(address account)
-        external
-        view
-        returns (
-            uint256 rewardBeforeSlash,
-            uint256 slashAmount,
-            uint256 rewardAfterSlash
-        )
-    {
-        rewardBeforeSlash = earned(account);
-        if (_isEarly(users[account].entryTime)) {
-            slashAmount = (rewardBeforeSlash * EARLY_REWARD_SLASH_BPS) / BPS;
-        }
-        rewardAfterSlash = rewardBeforeSlash - slashAmount;
-    }
-
-    function rewardsRemainingBySchedule() external view returns (uint256) {
-        if (block.number >= endBlock) return 0;
-        return (endBlock - block.number) * rewardPerBlock;
-    }
-
-    function blocksRemaining() external view returns (uint256) {
-        if (block.number >= endBlock) return 0;
-        return endBlock - block.number;
-    }
-
-    function estimatedSecondsRemaining() external view returns (uint256) {
-        if (block.number >= endBlock) return 0;
-        return (endBlock - block.number) * ELECTRONEUM_BLOCK_TIME_SECONDS;
-    }
-
     // =============================================================
-    // Internal reward accounting
+    // Internal Functions
     // =============================================================
 
     modifier updateReward(address account) {
@@ -544,14 +425,10 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
     }
 
     function _currentAccRewardPerWeight() internal view returns (uint256) {
-        if (totalRewardWeight == 0) {
-            return accRewardPerWeight;
-        }
+        if (totalRewardWeight == 0) return accRewardPerWeight;
 
         uint256 applicableBlock = lastRewardBlockApplicable();
-        if (applicableBlock <= lastRewardBlock) {
-            return accRewardPerWeight;
-        }
+        if (applicableBlock <= lastRewardBlock) return accRewardPerWeight;
 
         uint256 blocksElapsed = applicableBlock - lastRewardBlock;
         uint256 reward = blocksElapsed * rewardPerBlock;
@@ -566,7 +443,7 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
 
         user.unclaimedRewards = 0;
 
-        uint256 slashAmount;
+        uint256 slashAmount = 0;
         uint256 payAmount = reward;
 
         if (_isEarly(user.entryTime)) {
@@ -591,9 +468,8 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
 
     function _refreshUserWeight(address account) internal {
         UserInfo storage user = users[account];
-
         uint256 oldWeight = user.rewardWeight;
-        uint256 newWeight;
+        uint256 newWeight = 0;
 
         if (user.coreStaked > 0 && user.nfts.length >= 1) {
             newWeight = (user.coreStaked * _boostForNFTCount(user.nfts.length)) / BPS;
@@ -656,10 +532,7 @@ contract PlanetZephyrosCoreNftStaking is Ownable, ReentrancyGuard, IERC721Receiv
     }
 
     function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes calldata
+        address, address, uint256, bytes calldata
     ) external pure override returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
