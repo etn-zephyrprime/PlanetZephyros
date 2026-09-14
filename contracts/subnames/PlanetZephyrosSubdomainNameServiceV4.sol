@@ -34,6 +34,25 @@ pragma solidity ^0.8.24;
  * on their behalf (see setSubnamePricePerYear's own access control, unchanged: only the parent
  * domain's own owner/operator, exactly as V3 already enforced).
  *
+ * Two more additions, both for day-one deploy convenience rather than the ongoing public flows
+ * above:
+ *
+ *  - The constructor can seed initial ETN subname prices for domains the deployer already owns
+ *    (see the InitialSubnamePrice struct below) — each entry is marked activated AND priced in
+ *    one atomic step at deploy time, skipping the normal "activate, then separately set a price"
+ *    two-call sequence. This is a deployer-trusted bootstrap, not a public function: it trusts the
+ *    node hashes it's given rather than re-verifying real NameWrapper/BaseRegistrar ownership the
+ *    way activateDomain does, since there's no "buyer" to prove ownership against here.
+ *
+ *  - goldlisted / setGoldlisted: an owner-controlled exemption list that waives the activation fee
+ *    entirely for a specific node, still going through the real activateDomain/
+ *    activateDomainWithToken flow (full ownership verification, wrap-if-needed, etc. — only the
+ *    fee itself is skipped). Exists for the exact case a very-long-duration name produces: the
+ *    minBrokerageFeePerYear floor scales with however much time is left on the name, so a name
+ *    with (for example) a 100-year remaining expiry would otherwise floor at 100x a normal
+ *    activation fee — not a pricing bug, just a formula that assumes ordinary registration
+ *    durations, never designed for names that long-lived.
+ *
  * Website: https://planetzephyros.xyz/
  */
 
@@ -120,6 +139,20 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
     /// setSubnamePricePerYear/listExistingName require this before a node can be used in the marketplace.
     mapping(bytes32 => bool) public domainActivated;
 
+    /// @notice Nodes exempt from the activation fee entirely — activateDomain/
+    /// activateDomainWithToken still run their full ownership/wrap logic for a goldlisted node,
+    /// only the fee itself becomes 0. Owner-controlled, not hardcoded — see setGoldlisted. See
+    /// this contract's own header comment for why this exists (a very-long-duration name's
+    /// minBrokerageFeePerYear floor scales with however much time is left on it).
+    mapping(bytes32 => bool) public goldlisted;
+
+    /// @notice One entry for the constructor's optional initial-pricing seed — see the
+    /// constructor's own parameter and this contract's header comment.
+    struct InitialSubnamePrice {
+        bytes32 node;
+        uint256 pricePerYear;
+    }
+
     // ========================
     // Marketplace listings (resale of an already-wrapped name/subname)
     // ========================
@@ -177,6 +210,7 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
     event PaymentTokenWhitelisted(address indexed token, bool allowed);
     event MinSubnamePricePerYearUpdated(address indexed token, uint256 minPricePerYear);
     event ActivationMigrated(bytes32 indexed node);
+    event GoldlistUpdated(bytes32 indexed node, bool status);
 
     modifier whenNotPaused() {
         require(!paused, "Marketplace paused");
@@ -190,7 +224,9 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
         address _defaultResolver,
         address payable _projectWallet,
         address _owner,
-        address _legacyMarketplace
+        address _legacyMarketplace,
+        InitialSubnamePrice[] memory _initialPricing,
+        bytes32[] memory _initialGoldlist
     ) Ownable(_owner) {
         require(_registrarController != address(0), "Zero registrar controller");
         require(_nameWrapper != address(0), "Zero name wrapper");
@@ -208,8 +244,31 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
 
         // Same non-hardcoded, owner-adjustable floor every other token gets (setMinSubnamePricePerYear)
         // — set here purely as ETN's own starting value, matching the number this service has
-        // always used for subname pricing.
+        // always used for subname pricing. Set BEFORE the initial-pricing loop below, which checks
+        // against it.
         minSubnamePricePerYear[address(0)] = 1000 ether;
+
+        // Deployer-trusted bootstrap — see this contract's own header comment. Each entry is
+        // marked activated (an owner-seeded price with domainActivated left false would sit
+        // inert: nothing downstream re-checks domainActivated once a price exists, so leaving it
+        // false here would just be a misleading public flag, not an extra safety gate) and priced
+        // in ETN, still subject to the same minimum-price floor setSubnamePricePerYear itself
+        // enforces (checked above, not skipped).
+        for (uint256 i = 0; i < _initialPricing.length; i++) {
+            bytes32 node = _initialPricing[i].node;
+            uint256 pricePerYear = _initialPricing[i].pricePerYear;
+            require(pricePerYear >= minSubnamePricePerYear[address(0)], "Below minimum price");
+
+            domainActivated[node] = true;
+            subnamePricePerYear[node][address(0)] = pricePerYear;
+            emit DomainActivated(node, _owner, 0);
+            emit SubnamePricePerYearSet(node, address(0), pricePerYear);
+        }
+
+        for (uint256 i = 0; i < _initialGoldlist.length; i++) {
+            goldlisted[_initialGoldlist[i]] = true;
+            emit GoldlistUpdated(_initialGoldlist[i], true);
+        }
     }
 
     // ========================================================
@@ -417,7 +476,11 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
         bool wasWrapped = _requireNodeOwner(node, label, msg.sender);
         require(!domainActivated[node], "Already activated");
 
-        fee = _activationFee(node, label);
+        // Always computed (preserves _activationFee's own expiry check regardless of goldlist
+        // status — a goldlisted-but-expired name still shouldn't activate), only the CHARGE is
+        // waived for a goldlisted node.
+        uint256 computedFee = _activationFee(node, label);
+        fee = goldlisted[node] ? 0 : computedFee;
         require(msg.value >= fee, "Insufficient payment");
 
         // A name registered directly through ETHRegistrarController and never wrapped only gets
@@ -547,28 +610,34 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
         uint256 deadline
     ) external nonReentrant whenNotPaused returns (uint256 tokenAmountPaid) {
         require(whitelistedPaymentTokens[paymentToken], "Token not whitelisted");
-        require(swapRouter != address(0), "Swap router not configured");
         require(deadline >= block.timestamp, "Quote expired");
 
         bool wasWrapped = _requireNodeOwner(node, label, msg.sender);
         require(!domainActivated[node], "Already activated");
 
-        uint256 etnFee = _activationFee(node, label);
-
-        address weth = IUniswapV2Router02Lite(swapRouter).WETH();
-        address[] memory path = new address[](2);
-        path[0] = weth;
-        path[1] = paymentToken;
-        uint256[] memory amounts = IUniswapV2Router02Lite(swapRouter).getAmountsOut(etnFee, path);
-        tokenAmountPaid = amounts[amounts.length - 1];
-        require(tokenAmountPaid <= maxTokenAmount, "Quote exceeds max token amount");
+        // Always computed (preserves _activationFee's own expiry check regardless of goldlist
+        // status), only the CHARGE is waived for a goldlisted node — see activateDomain's own
+        // comment on this same pattern.
+        uint256 computedEtnFee = _activationFee(node, label);
+        uint256 etnFee = goldlisted[node] ? 0 : computedEtnFee;
 
         if (!wasWrapped) {
             _wrapDirectRegistration(label, msg.sender);
         }
         domainActivated[node] = true;
 
-        if (tokenAmountPaid > 0) {
+        // A goldlisted (or otherwise free) activation needs no quote and no router at all —
+        // tokenAmountPaid stays 0, nothing to transfer. Only a genuinely non-zero fee needs
+        // swapRouter configured.
+        if (etnFee > 0) {
+            require(swapRouter != address(0), "Swap router not configured");
+            address weth = IUniswapV2Router02Lite(swapRouter).WETH();
+            address[] memory path = new address[](2);
+            path[0] = weth;
+            path[1] = paymentToken;
+            uint256[] memory amounts = IUniswapV2Router02Lite(swapRouter).getAmountsOut(etnFee, path);
+            tokenAmountPaid = amounts[amounts.length - 1];
+            require(tokenAmountPaid <= maxTokenAmount, "Quote exceeds max token amount");
             require(IERC20(paymentToken).transferFrom(msg.sender, projectWallet, tokenAmountPaid), "Fee transfer failed");
         }
 
@@ -910,6 +979,16 @@ contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
     function setMinSubnamePricePerYear(address token, uint256 minPricePerYear) external onlyOwner {
         minSubnamePricePerYear[token] = minPricePerYear;
         emit MinSubnamePricePerYearUpdated(token, minPricePerYear);
+    }
+
+    /// @notice Exempts (or un-exempts) `node` from the activation fee entirely — see this
+    /// contract's own header comment for why this exists. Does NOT skip activateDomain/
+    /// activateDomainWithToken's ownership verification or wrapping logic, only the fee; a
+    /// goldlisted node still needs its real owner to call one of those functions (or be seeded
+    /// pre-activated via the constructor instead, if the deployer prefers to skip that call too).
+    function setGoldlisted(bytes32 node, bool status) external onlyOwner {
+        goldlisted[node] = status;
+        emit GoldlistUpdated(node, status);
     }
 
     /// @notice Rescues ERC20 tokens accidentally sent to this contract. Unlike V3 (whose burn

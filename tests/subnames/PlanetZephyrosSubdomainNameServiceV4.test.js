@@ -70,7 +70,9 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
       defaultResolver,
       projectWallet.address,
       deployer.address,
-      await legacy.getAddress()
+      await legacy.getAddress(),
+      [], // initialPricing — empty by default; the "constructor initial pricing" describe block below deploys its own instance with real entries
+      [] // initialGoldlist — same, see the "goldlisted" describe block
     );
 
     // Same neutralization as V3's own fixture, same reasoning (tiny PRICE_PER_SECOND makes
@@ -120,6 +122,33 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
     const ctx = await loadFixture(deployFixture);
     await registerName(ctx, ctx.alice, label, duration);
     return ctx;
+  }
+
+  // Registers a name directly with the registrar (bypassing the marketplace brokerage) and
+  // approves BaseRegistrar, mirroring V3's own "genuinely never wrapped" activation setup — the
+  // case activateDomain/activateDomainWithToken exist to handle. File-scope (not just the
+  // activateDomainWithToken describe block below) since the goldlist tests need the exact same
+  // unactivated-domain setup for the plain ETN activateDomain path.
+  async function withUnactivatedDirectRegistration(ctx, signer, label) {
+    const { controller, base, marketplace } = ctx;
+    const secret = ethers.hexlify(ethers.randomBytes(32));
+    const referrer = ethers.ZeroHash;
+    const registration = {
+      label,
+      owner: signer.address,
+      duration: ONE_YEAR,
+      secret,
+      resolver: ethers.ZeroAddress,
+      data: [],
+      reverseRecord: 0,
+      referrer,
+    };
+    const commitment = await controller.makeCommitment(registration);
+    await controller.connect(signer).commit(commitment);
+    await time.increase(61);
+    const price = await controller.rentPrice(label, ONE_YEAR);
+    await controller.connect(signer).register(registration, { value: price.base + price.premium });
+    await base.connect(signer).setApprovalForAll(await marketplace.getAddress(), true);
   }
 
   // ========================================================
@@ -314,31 +343,6 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
   // ERC20-denominated domain activation
   // ========================================================
   describe("activateDomainWithToken", function () {
-    // Registers "carol" directly with the registrar (bypassing the marketplace brokerage) and
-    // approves BaseRegistrar, mirroring V3's own "genuinely never wrapped" activation setup —
-    // the case activateDomain/activateDomainWithToken exist to handle.
-    async function withUnactivatedDirectRegistration(ctx, signer, label) {
-      const { controller, base, marketplace } = ctx;
-      const secret = ethers.hexlify(ethers.randomBytes(32));
-      const referrer = ethers.ZeroHash;
-      const registration = {
-        label,
-        owner: signer.address,
-        duration: ONE_YEAR,
-        secret,
-        resolver: ethers.ZeroAddress,
-        data: [],
-        reverseRecord: 0,
-        referrer,
-      };
-      const commitment = await controller.makeCommitment(registration);
-      await controller.connect(signer).commit(commitment);
-      await time.increase(61);
-      const price = await controller.rentPrice(label, ONE_YEAR);
-      await controller.connect(signer).register(registration, { value: price.base + price.premium });
-      await base.connect(signer).setApprovalForAll(await marketplace.getAddress(), true);
-    }
-
     it("rejects a non-whitelisted token", async function () {
       const ctx = await loadFixture(deployFixture);
       const { marketplace, carol, otherToken } = ctx;
@@ -630,5 +634,194 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
       await marketplace.connect(bob).registerSubname(parentNode, "shop", ONE_YEAR, tokenAddr);
       return tokenAddr;
     }
+  });
+
+  // ========================================================
+  // Constructor-seeded initial subname pricing
+  // ========================================================
+  describe("constructor initial pricing", function () {
+    // Deploys its own instance (deployFixture's own marketplace always passes empty arrays) with
+    // real InitialSubnamePrice entries, mirroring the real deploy-time use case: seeding prices
+    // for domains the deployer already owns, without a separate activateDomain +
+    // setSubnamePricePerYear call per domain.
+    async function deployWithInitialPricing(initialPricing) {
+      const base = await loadFixture(deployFixture);
+      const { controller, wrapper, base: baseRegistrar, defaultResolver, projectWallet, deployer, legacy } = base;
+
+      const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainNameServiceV4");
+      const marketplace = await Marketplace.deploy(
+        await controller.getAddress(),
+        await wrapper.getAddress(),
+        await baseRegistrar.getAddress(),
+        defaultResolver,
+        projectWallet.address,
+        deployer.address,
+        await legacy.getAddress(),
+        initialPricing,
+        []
+      );
+      return { ...base, marketplace };
+    }
+
+    it("seeds activation + ETN price atomically for every entry, no separate call needed", async function () {
+      const node1 = parentNodeFor("zypto");
+      const node2 = parentNodeFor("community");
+      const price1 = ethers.parseEther("1250");
+      const price2 = ethers.parseEther("2100");
+
+      const { marketplace } = await deployWithInitialPricing([
+        { node: node1, pricePerYear: price1 },
+        { node: node2, pricePerYear: price2 },
+      ]);
+
+      expect(await marketplace.domainActivated(node1)).to.equal(true);
+      expect(await marketplace.domainActivated(node2)).to.equal(true);
+      expect(await marketplace.subnamePricePerYear(node1, ethers.ZeroAddress)).to.equal(price1);
+      expect(await marketplace.subnamePricePerYear(node2, ethers.ZeroAddress)).to.equal(price2);
+    });
+
+    it("an empty array seeds nothing, same as deployFixture's own default instance", async function () {
+      const { marketplace } = await deployWithInitialPricing([]);
+      const node = parentNodeFor("nobody-seeded-this");
+      expect(await marketplace.domainActivated(node)).to.equal(false);
+      expect(await marketplace.subnamePricePerYear(node, ethers.ZeroAddress)).to.equal(0n);
+    });
+
+    it("still enforces the minimum ETN price on each seeded entry", async function () {
+      const node = parentNodeFor("toocheap");
+      const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainNameServiceV4");
+      const base = await loadFixture(deployFixture);
+      await expect(
+        Marketplace.deploy(
+          await base.controller.getAddress(),
+          await base.wrapper.getAddress(),
+          await base.base.getAddress(),
+          base.defaultResolver,
+          base.projectWallet.address,
+          base.deployer.address,
+          await base.legacy.getAddress(),
+          [{ node, pricePerYear: ethers.parseEther("999") }], // below the 1000 ETN default floor
+          []
+        )
+      ).to.be.revertedWith("Below minimum price");
+    });
+
+    it("a seeded domain's owner can immediately sell a subname under it, no activateDomain call needed", async function () {
+      const node = parentNodeFor("money");
+      const price = ethers.parseEther("4000");
+      const ctx = await deployWithInitialPricing([{ node, pricePerYear: price }]);
+      const { marketplace, wrapper, base, alice, bob, defaultResolver } = ctx;
+
+      // "alice" never went through registerName/activateDomain on THIS marketplace instance at
+      // all — the constructor is what activated it. She still needs to genuinely own the wrapped
+      // name and approve the marketplace, same as any other seller (the constructor seeds
+      // pricing/activation, not ownership or approval, which stay real on-chain facts) — done
+      // here entirely through the raw registrar/NameWrapper contracts directly, the marketplace
+      // itself never involved in getting her that ownership. wrapETH2LD called directly (not via
+      // the marketplace's own _wrapDirectRegistration) needs the NameWrapper contract itself
+      // approved as BaseRegistrar operator, not the marketplace.
+      await withUnactivatedDirectRegistration(ctx, alice, "money");
+      await base.connect(alice).setApprovalForAll(await wrapper.getAddress(), true);
+      await wrapper.connect(alice).wrapETH2LD("money", alice.address, 0, defaultResolver);
+      await wrapper.connect(alice).setApprovalForAll(await marketplace.getAddress(), true);
+
+      // Slightly under a year, not exactly ONE_YEAR — withUnactivatedDirectRegistration registers
+      // the parent for exactly ONE_YEAR from a few seconds ago (commitAndWait's own 61s wait), so
+      // a full-ONE_YEAR subname duration requested now would overshoot the parent's actual
+      // remaining expiry by that same handful of seconds ("Duration exceeds parent expiry").
+      const duration = ONE_YEAR - 3600;
+      const expectedPrice = (price * BigInt(duration)) / BigInt(365 * 24 * 60 * 60); // same pro-ration as quoteSubname
+      const expectedSellerAmount = (expectedPrice * 8000n) / 10000n;
+
+      await expect(marketplace.connect(bob).registerSubname(node, "shop", duration, ethers.ZeroAddress, { value: price }))
+        .to.emit(marketplace, "SubnameRegistered")
+        .withArgs(node, "shop", bob.address, ethers.ZeroAddress, expectedPrice, expectedSellerAmount, expectedPrice - expectedSellerAmount);
+    });
+  });
+
+  // ========================================================
+  // Goldlist — activation fee exemption
+  // ========================================================
+  describe("goldlisted activation", function () {
+    it("only owner can set/unset goldlist status", async function () {
+      const { marketplace, alice, deployer } = await loadFixture(deployFixture);
+      const node = parentNodeFor("planetzephyros");
+      await expect(marketplace.connect(alice).setGoldlisted(node, true)).to.be.revertedWithCustomError(
+        marketplace,
+        "OwnableUnauthorizedAccount"
+      );
+
+      await expect(marketplace.connect(deployer).setGoldlisted(node, true))
+        .to.emit(marketplace, "GoldlistUpdated")
+        .withArgs(node, true);
+      expect(await marketplace.goldlisted(node)).to.equal(true);
+    });
+
+    it("activateDomain charges nothing for a goldlisted node, even with a huge minBrokerageFeePerYear-driven fee", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { marketplace, deployer, carol } = ctx;
+      // Undo deployFixture's own neutralization (it zeroes minBrokerageFeePerYear) specifically
+      // for this test — the whole point is proving a goldlisted node is exempt EVEN when the
+      // floor would otherwise be enormous, the exact real-world case (a very-long-duration name)
+      // this feature exists for.
+      await marketplace.connect(deployer).setMinBrokerageFeePerYear(ethers.parseEther("25000"));
+      await marketplace.connect(deployer).setGoldlisted(parentNodeFor("carol"), true);
+
+      await withUnactivatedDirectRegistration(ctx, carol, "carol");
+      const node = parentNodeFor("carol");
+
+      // Without goldlist this would need a huge payment (25,000 ETN/year x ~1 year remaining) —
+      // sending 0 and still succeeding is exactly what proves the exemption works.
+      await expect(marketplace.connect(carol).activateDomain(node, "carol"))
+        .to.emit(marketplace, "DomainActivated")
+        .withArgs(node, carol.address, 0);
+
+      expect(await marketplace.domainActivated(node)).to.equal(true);
+    });
+
+    it("a non-goldlisted node still pays the real fee, proving the exemption is genuinely per-node", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { marketplace, deployer, carol } = ctx;
+      await marketplace.connect(deployer).setMinBrokerageFeePerYear(ethers.parseEther("25000"));
+      // Deliberately NOT goldlisted.
+
+      await withUnactivatedDirectRegistration(ctx, carol, "carol");
+      const node = parentNodeFor("carol");
+
+      await expect(
+        marketplace.connect(carol).activateDomain(node, "carol", { value: 0 })
+      ).to.be.revertedWith("Insufficient payment");
+    });
+
+    it("activateDomainWithToken charges nothing and never touches the router for a goldlisted node", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { marketplace, deployer, carol, otherToken } = ctx;
+      const tokenAddr = await otherToken.getAddress();
+      await marketplace.connect(deployer).setPaymentTokenWhitelisted(tokenAddr, true);
+      await marketplace.connect(deployer).setMinBrokerageFeePerYear(ethers.parseEther("25000"));
+      await marketplace.connect(deployer).setGoldlisted(parentNodeFor("carol"), true);
+      // Deliberately NOT setting a swap router — proves this path never calls it for a
+      // goldlisted (free) activation.
+
+      await withUnactivatedDirectRegistration(ctx, carol, "carol");
+      const node = parentNodeFor("carol");
+      const deadline = (await time.latest()) + 300;
+
+      await expect(marketplace.connect(carol).activateDomainWithToken(node, "carol", tokenAddr, 0, deadline))
+        .to.emit(marketplace, "DomainActivatedWithToken")
+        .withArgs(node, carol.address, tokenAddr, 0, 0);
+
+      expect(await marketplace.domainActivated(node)).to.equal(true);
+    });
+
+    it("goldlist status alone doesn't bypass ownership verification or the expiry check", async function () {
+      const { marketplace, deployer, bob } = await loadFixture(deployFixture);
+      const node = parentNodeFor("nobody-owns-this-yet");
+      await marketplace.connect(deployer).setGoldlisted(node, true);
+
+      // bob never registered/owns "nobody-owns-this-yet" at all — goldlist waives the FEE, not
+      // the ownership proof activateDomain still requires.
+      await expect(marketplace.connect(bob).activateDomain(node, "nobody-owns-this-yet")).to.be.reverted;
+    });
   });
 });
