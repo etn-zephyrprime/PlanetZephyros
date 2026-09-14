@@ -44,13 +44,18 @@ function computeNode(label) {
 // one transaction, no separate activateDomain + setSubnamePricePerYear call needed per domain).
 // Labels only — node hashes are derived below, never hand-computed/pasted, so there's nothing to
 // get wrong by transcription.
-const INITIAL_PRICING = [
-  { label: "zypto", priceEtn: "1250" },
-  { label: "community", priceEtn: "2100" },
-  { label: "money", priceEtn: "4000" },
-  { label: "enssubdomain", priceEtn: "5000" },
-  { label: "bank", priceEtn: "20000" },
-];
+//
+// Only ever list a domain the deploying wallet genuinely owns on NameWrapper — seeding activates
+// AND prices the node without any ownership check (see this contract's own header comment on why
+// that's a deliberate, deployer-trusted bootstrap, not a public flow), so seeding a domain
+// actually owned by someone else would just be meaningless/confusing on-chain state: the real
+// owner never approved this marketplace, so nothing could ever actually sell under it.
+//
+// Confirmed live on mainnet (NameWrapper.ownerOf) before finalizing this list: zypto.etn,
+// community.etn, money.etn, and bank.etn each belong to a different, unrelated wallet — NOT this
+// project's — so they're deliberately absent here despite being mentioned in earlier planning.
+// enssubdomain.etn and planetzephyros.etn (the goldlist entry below) share the same owner.
+const INITIAL_PRICING = [{ label: "enssubdomain", priceEtn: "5000" }];
 
 // Nodes exempt from the activation fee entirely (see setGoldlisted's own comment on why) — still
 // needs a real activateDomain/activateDomainWithToken call from the domain's genuine owner after
