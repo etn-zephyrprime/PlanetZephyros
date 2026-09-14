@@ -1,4 +1,4 @@
-// Deploys PlanetZephyrosSubdomainNameServiceV4 to Electroneum testnet or mainnet, seeding initial
+// Deploys PlanetZephyrosSubdomainServiceV4 to Electroneum testnet or mainnet, seeding initial
 // subname prices + a goldlist entry for the deployer's own domains, and verifies it on the block
 // explorer. Run with:
 //   npx hardhat run scripts/deployMarketplaceV4.js --network electroneumTestnet
@@ -104,7 +104,7 @@ async function main() {
   const initialGoldlist = INITIAL_GOLDLIST.map(computeNode);
 
   const [deployer] = await hre.ethers.getSigners();
-  console.log("Deploying PlanetZephyrosSubdomainNameServiceV4 with account:", deployer.address);
+  console.log("Deploying PlanetZephyrosSubdomainServiceV4 with account:", deployer.address);
   console.log("  registrarController:", registrarController);
   console.log("  nameWrapper:        ", nameWrapper);
   console.log("  baseRegistrar:      ", baseRegistrar);
@@ -133,12 +133,12 @@ async function main() {
     initialGoldlist,
   ];
 
-  const factory = await hre.ethers.getContractFactory("PlanetZephyrosSubdomainNameServiceV4");
+  const factory = await hre.ethers.getContractFactory("PlanetZephyrosSubdomainServiceV4");
   const marketplace = await factory.deploy(...constructorArgs);
   await marketplace.waitForDeployment();
 
   const address = await marketplace.getAddress();
-  console.log("PlanetZephyrosSubdomainNameServiceV4 deployed to:", address);
+  console.log("PlanetZephyrosSubdomainServiceV4 deployed to:", address);
 
   // Sanity check the seed actually landed as intended, reading it back from the freshly deployed
   // contract rather than just trusting the constructor call succeeded silently.
