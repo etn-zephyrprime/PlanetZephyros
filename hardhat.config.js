@@ -69,7 +69,7 @@ module.exports = {
       },
       // Same Electroneum testnet EVM constraint as V3 above (see that comment) — V4 is a
       // superset of V3's own logic, so it needs the identical override for the identical reason.
-      "contracts/subnames/PlanetZephyrosSubdomainNameServiceV4.sol": {
+      "contracts/subnames/PlanetZephyrosSubdomainServiceV4.sol": {
         version: SOLC_VERSION,
         settings: {
           optimizer: { enabled: true, runs: 200 },

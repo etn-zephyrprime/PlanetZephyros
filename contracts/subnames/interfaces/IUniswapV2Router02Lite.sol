@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /// @dev Trimmed Uniswap V2 router interface, same shape used elsewhere in this repo
 /// (see TestCore.sol / ErevosFeeReflection.sol) for buy-and-burn swaps. Purely additive to the
 /// existing two functions — swapExactTokensForTokensSupportingFeeOnTransferTokens and
-/// getAmountsOut were added for PlanetZephyrosSubdomainNameServiceV4's ERC20 buyback
+/// getAmountsOut were added for PlanetZephyrosSubdomainServiceV4's ERC20 buyback
 /// (buyBackAndBurnToken) and ERC20 activation-fee quoting (activateDomainWithToken); every
 /// existing consumer of this interface is unaffected.
 interface IUniswapV2Router02Lite {

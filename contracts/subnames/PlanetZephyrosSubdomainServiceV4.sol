@@ -69,7 +69,7 @@ import "./interfaces/IBaseRegistrarLite.sol";
 import "./interfaces/ILegacyMarketplace.sol";
 import "../EnsSubdomainService/ETNNamehash.sol";
 
-contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
+contract PlanetZephyrosSubdomainServiceV4 is Ownable, ReentrancyGuard {
     // ========================
     // Immutable protocol wiring
     // ========================

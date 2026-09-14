@@ -23,7 +23,7 @@ function subNodeFor(parentNode, label) {
   return ethers.keccak256(ethers.concat([parentNode, labelHash]));
 }
 
-describe("PlanetZephyrosSubdomainNameServiceV4", function () {
+describe("PlanetZephyrosSubdomainServiceV4", function () {
   async function deployFixture() {
     const [deployer, projectWallet, alice, bob, carol] = await ethers.getSigners();
 
@@ -62,7 +62,7 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
       deployer.address
     );
 
-    const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainNameServiceV4");
+    const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainServiceV4");
     const marketplace = await Marketplace.deploy(
       await controller.getAddress(),
       await wrapper.getAddress(),
@@ -648,7 +648,7 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
       const base = await loadFixture(deployFixture);
       const { controller, wrapper, base: baseRegistrar, defaultResolver, projectWallet, deployer, legacy } = base;
 
-      const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainNameServiceV4");
+      const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainServiceV4");
       const marketplace = await Marketplace.deploy(
         await controller.getAddress(),
         await wrapper.getAddress(),
@@ -689,7 +689,7 @@ describe("PlanetZephyrosSubdomainNameServiceV4", function () {
 
     it("still enforces the minimum ETN price on each seeded entry", async function () {
       const node = parentNodeFor("toocheap");
-      const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainNameServiceV4");
+      const Marketplace = await ethers.getContractFactory("PlanetZephyrosSubdomainServiceV4");
       const base = await loadFixture(deployFixture);
       await expect(
         Marketplace.deploy(
