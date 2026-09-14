@@ -1,0 +1,1008 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+/**
+ * Planet Zephyros Name Marketplace V4
+ *
+ * A wrap-around service for Electroneum's ENS-fork naming system.
+ *
+ *  1) Registration brokerage: buyers register a new .etn name through this contract instead of
+ *     calling ETHRegistrarController directly. This contract forwards the exact base price to
+ *     the registrar, wraps the resulting name via NameWrapper straight into the buyer's wallet,
+ *     and keeps a configurable brokerage fee on top (100% project revenue). Payable in ETN
+ *     (unchanged from V3) or, via activateDomainWithToken, in any owner-whitelisted ERC20 —
+ *     see that function's own comment for how the ETN-denominated fee gets converted.
+ *
+ *  2) Subname self-serve registration + resale: once a buyer owns a wrapped name, they can set a
+ *     price — in ETN, or in any owner-whitelisted ERC20, or both at once — for anyone to
+ *     self-register a subname of it (buyer picks the label, created on payment via
+ *     NameWrapper.setSubnodeRecord), or list an already-wrapped name/subname they own for resale
+ *     (resale stays ETN-only, unchanged from V3). Every subname sale splits 80% to the seller and
+ *     20% into a pool, kept in whatever currency it was paid in, that is periodically swapped for
+ *     CORE and burned via CORE.burn() — see buyBackAndBurn (ETN pool, unchanged from V3) and
+ *     buyBackAndBurnToken (one ERC20 pool at a time, new in V4).
+ *
+ * V4 vs V3: subnamePricePerYear/setSubnamePricePerYear/registerSubname/quoteSubname all gained a
+ * `paymentToken` parameter (address(0) = ETN, matching V3's behavior exactly when used that way).
+ * whitelistedPaymentTokens/minSubnamePricePerYear are the new owner-controlled whitelist and
+ * per-token price floor — no payment token is hardcoded, and neither is any minimum, including
+ * ETN's own (set in the constructor, then owner-adjustable same as every other token). V3 has no
+ * upgrade path (plain Ownable, immutable constructor wiring — confirmed, not assumed), so this is
+ * a new deployment: migrateActivation lets a domain already activated on V3 carry that fact over
+ * for free, by re-reading V3's own domainActivated as the source of truth, rather than an
+ * off-chain admin migration list. Deliberately NOT migrated: existing V3 subname prices — those
+ * stay each owner's own call to make again on V4, never something this contract or its owner sets
+ * on their behalf (see setSubnamePricePerYear's own access control, unchanged: only the parent
+ * domain's own owner/operator, exactly as V3 already enforced).
+ *
+ * Two more additions, both for day-one deploy convenience rather than the ongoing public flows
+ * above:
+ *
+ *  - The constructor can seed initial ETN subname prices for domains the deployer already owns
+ *    (see the InitialSubnamePrice struct below) — each entry is marked activated AND priced in
+ *    one atomic step at deploy time, skipping the normal "activate, then separately set a price"
+ *    two-call sequence. This is a deployer-trusted bootstrap, not a public function: it trusts the
+ *    node hashes it's given rather than re-verifying real NameWrapper/BaseRegistrar ownership the
+ *    way activateDomain does, since there's no "buyer" to prove ownership against here.
+ *
+ *  - goldlisted / setGoldlisted: an owner-controlled exemption list that waives the activation fee
+ *    entirely for a specific node, still going through the real activateDomain/
+ *    activateDomainWithToken flow (full ownership verification, wrap-if-needed, etc. — only the
+ *    fee itself is skipped). Exists for the exact case a very-long-duration name produces: the
+ *    minBrokerageFeePerYear floor scales with however much time is left on the name, so a name
+ *    with (for example) a 100-year remaining expiry would otherwise floor at 100x a normal
+ *    activation fee — not a pricing bug, just a formula that assumes ordinary registration
+ *    durations, never designed for names that long-lived.
+ *
+ * Website: https://planetzephyros.xyz/
+ */
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import "./interfaces/IETHRegistrarController.sol";
+import "./interfaces/IPriceOracle.sol";
+import "./interfaces/INameWrapperLite.sol";
+import "./interfaces/IBurnableERC20.sol";
+import "./interfaces/IUniswapV2Router02Lite.sol";
+import "./interfaces/IBaseRegistrarLite.sol";
+import "./interfaces/ILegacyMarketplace.sol";
+import "../EnsSubdomainService/ETNNamehash.sol";
+
+contract PlanetZephyrosSubdomainNameServiceV4 is Ownable, ReentrancyGuard {
+    // ========================
+    // Immutable protocol wiring
+    // ========================
+    IETHRegistrarController public immutable registrarController;
+    INameWrapperLite public immutable nameWrapper;
+    IBaseRegistrarLite public immutable baseRegistrar;
+
+    /// @notice V3's own deployed address, kept only so migrateActivation can re-read its
+    /// domainActivated mapping — never called for anything else. address(0) if there's nothing
+    /// to migrate from (e.g. a future V5 migrating from this V4 instead).
+    ILegacyMarketplace public immutable legacyMarketplace;
+
+    // ========================
+    // Fee configuration
+    // ========================
+    uint256 private constant BPS_DENOM = 10000;
+    uint256 public constant SELLER_BPS = 8000; // 80% to seller on every marketplace sale
+    uint256 public constant BURN_BPS = 2000; // 20% into the CORE buyback/burn pool
+    uint256 public constant MAX_BROKERAGE_BPS = 5000; // 50% hard ceiling
+
+    /// @notice Brokerage surcharge on top of the registrar's own price, kept as project revenue.
+    uint256 public brokerageBps = 5000; // 50% default
+
+    /// @notice Owner-adjustable floor under the brokerage fee, denominated per 365 days —
+    /// protects project revenue in ETN terms regardless of how ETN's own market value moves.
+    /// brokerageBps alone could compute an unacceptably small fee for cheap/short registrations;
+    /// this is applied as max(bps-based fee, minBrokerageFeePerYear * duration / 365 days).
+    /// Manually adjustable, not oracle-driven — the owner updates it if ETN's value moves.
+    uint256 public minBrokerageFeePerYear = 25_000 ether;
+
+    address public defaultResolver;
+    address payable public projectWallet;
+
+    address public coreToken;
+    address public swapRouter;
+
+    uint256 public burnPool; // ETN burn pool — unchanged from V3
+    uint256 public totalCoreBurned;
+
+    /// @notice ERC20 burn pools, one per token that's ever been paid in — separate from burnPool
+    /// (ETN) since each needs its own swap path/leg when bought back (see buyBackAndBurnToken).
+    mapping(address => uint256) public erc20BurnPool;
+
+    bool public paused;
+
+    // ========================
+    // Whitelisted payment tokens + per-token price floor
+    // ========================
+    /// @notice ERC20 tokens a domain owner may price/sell subnames in, beyond ETN (which is
+    /// always implicitly accepted and never appears in this mapping). Owner-controlled, not
+    /// hardcoded — see setPaymentTokenWhitelisted.
+    mapping(address => bool) public whitelistedPaymentTokens;
+
+    /// @notice Owner-adjustable floor under a subname's per-year price, keyed by payment token
+    /// (address(0) = ETN). Same "floor, not a fixed price, owner updates it as values move"
+    /// spirit as minBrokerageFeePerYear above, just generalized to be per-token instead of a
+    /// single global value — every whitelisted token needs its own floor since their real-world
+    /// values are entirely unrelated to each other and to ETN's.
+    mapping(address => uint256) public minSubnamePricePerYear;
+
+    // ========================
+    // Domain activation
+    // ========================
+    /// @notice Nodes that have paid their way into the marketplace, either by registering
+    /// through registerName, by having a subname created through registerSubname (fee already
+    /// captured in that sale's 80/20 split), or via a retroactive activateDomain payment.
+    /// setSubnamePricePerYear/listExistingName require this before a node can be used in the marketplace.
+    mapping(bytes32 => bool) public domainActivated;
+
+    /// @notice Nodes exempt from the activation fee entirely — activateDomain/
+    /// activateDomainWithToken still run their full ownership/wrap logic for a goldlisted node,
+    /// only the fee itself becomes 0. Owner-controlled, not hardcoded — see setGoldlisted. See
+    /// this contract's own header comment for why this exists (a very-long-duration name's
+    /// minBrokerageFeePerYear floor scales with however much time is left on it).
+    mapping(bytes32 => bool) public goldlisted;
+
+    /// @notice One entry for the constructor's optional initial-pricing seed — see the
+    /// constructor's own parameter and this contract's header comment.
+    struct InitialSubnamePrice {
+        bytes32 node;
+        uint256 pricePerYear;
+    }
+
+    // ========================
+    // Marketplace listings (resale of an already-wrapped name/subname)
+    // ========================
+    struct Listing {
+        address seller;
+        uint256 tokenId;
+        uint256 price;
+        bool active;
+    }
+
+    uint256 public nextListingId = 1;
+    mapping(uint256 => Listing) public listings;
+
+    // ========================
+    // Subname self-serve registration
+    // ========================
+    uint256 public constant MAX_SUBNAME_DURATION = 100 * 365 days; // sanity ceiling only
+
+    /// @notice Price (in wei of `paymentToken`, address(0) = ETN) per 365 days the parent domain
+    /// owner charges for anyone to self-register a subname under their domain. 0 means not for
+    /// sale IN THAT TOKEN — a domain can have a price set in several tokens at once (e.g. both
+    /// ETN and CORE), each independent; clearing one doesn't affect the others.
+    mapping(bytes32 => mapping(address => uint256)) public subnamePricePerYear;
+
+    // ========================
+    // Events
+    // ========================
+    event NameRegistered(
+        address indexed buyer,
+        string label,
+        uint256 basePrice,
+        uint256 brokerageFee,
+        address wrappedTo,
+        uint16 fuses
+    );
+    event ExistingNameListed(uint256 indexed listingId, address indexed seller, uint256 indexed tokenId, uint256 price);
+    event SubnamePricePerYearSet(bytes32 indexed parentNode, address indexed paymentToken, uint256 pricePerYear);
+    event SubnameRegistered(bytes32 indexed parentNode, string label, address indexed buyer, address indexed paymentToken, uint256 price, uint256 sellerAmount, uint256 burnAmount);
+    event ListingCancelled(uint256 indexed listingId);
+    event ListingSold(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 price, uint256 sellerAmount, uint256 burnAmount);
+    event BrokerageBpsUpdated(uint256 brokerageBps);
+    event MinBrokerageFeePerYearUpdated(uint256 minBrokerageFeePerYear);
+    event ProjectWalletUpdated(address projectWallet);
+    event DefaultResolverUpdated(address resolver);
+    event CoreTokenUpdated(address coreToken);
+    event SwapRouterUpdated(address swapRouter);
+    event PausedUpdated(bool paused);
+    /// @dev `token` is address(0) for the ETN pool (buyBackAndBurn) or the ERC20 address for a
+    /// token pool (buyBackAndBurnToken) — one event covers both paths, branch on `token` off-chain.
+    event BuybackAndBurn(address indexed token, uint256 amountSpent, uint256 coreBurned);
+    event TokensRescued(address token, uint256 amount, address to);
+    event DomainActivated(bytes32 indexed node, address indexed payer, uint256 feePaid);
+    event DomainActivatedWithToken(bytes32 indexed node, address indexed payer, address indexed paymentToken, uint256 tokenAmountPaid, uint256 etnEquivalentFee);
+    event NameRenewed(address indexed payer, string label, uint256 basePrice, uint256 brokerageFee, uint256 newExpiry);
+    event PaymentTokenWhitelisted(address indexed token, bool allowed);
+    event MinSubnamePricePerYearUpdated(address indexed token, uint256 minPricePerYear);
+    event ActivationMigrated(bytes32 indexed node);
+    event GoldlistUpdated(bytes32 indexed node, bool status);
+
+    modifier whenNotPaused() {
+        require(!paused, "Marketplace paused");
+        _;
+    }
+
+    constructor(
+        address _registrarController,
+        address _nameWrapper,
+        address _baseRegistrar,
+        address _defaultResolver,
+        address payable _projectWallet,
+        address _owner,
+        address _legacyMarketplace,
+        InitialSubnamePrice[] memory _initialPricing,
+        bytes32[] memory _initialGoldlist
+    ) Ownable(_owner) {
+        require(_registrarController != address(0), "Zero registrar controller");
+        require(_nameWrapper != address(0), "Zero name wrapper");
+        require(_baseRegistrar != address(0), "Zero base registrar");
+        require(_projectWallet != address(0), "Zero project wallet");
+
+        registrarController = IETHRegistrarController(_registrarController);
+        nameWrapper = INameWrapperLite(_nameWrapper);
+        baseRegistrar = IBaseRegistrarLite(_baseRegistrar);
+        defaultResolver = _defaultResolver;
+        projectWallet = _projectWallet;
+        // Zero address is a valid, deliberate choice (nothing to migrate from) — not required
+        // non-zero, unlike the wiring above that this contract genuinely can't function without.
+        legacyMarketplace = ILegacyMarketplace(_legacyMarketplace);
+
+        // Same non-hardcoded, owner-adjustable floor every other token gets (setMinSubnamePricePerYear)
+        // — set here purely as ETN's own starting value, matching the number this service has
+        // always used for subname pricing. Set BEFORE the initial-pricing loop below, which checks
+        // against it.
+        minSubnamePricePerYear[address(0)] = 1000 ether;
+
+        // Deployer-trusted bootstrap — see this contract's own header comment. Each entry is
+        // marked activated (an owner-seeded price with domainActivated left false would sit
+        // inert: nothing downstream re-checks domainActivated once a price exists, so leaving it
+        // false here would just be a misleading public flag, not an extra safety gate) and priced
+        // in ETN, still subject to the same minimum-price floor setSubnamePricePerYear itself
+        // enforces (checked above, not skipped).
+        for (uint256 i = 0; i < _initialPricing.length; i++) {
+            bytes32 node = _initialPricing[i].node;
+            uint256 pricePerYear = _initialPricing[i].pricePerYear;
+            require(pricePerYear >= minSubnamePricePerYear[address(0)], "Below minimum price");
+
+            domainActivated[node] = true;
+            subnamePricePerYear[node][address(0)] = pricePerYear;
+            emit DomainActivated(node, _owner, 0);
+            emit SubnamePricePerYearSet(node, address(0), pricePerYear);
+        }
+
+        for (uint256 i = 0; i < _initialGoldlist.length; i++) {
+            goldlisted[_initialGoldlist[i]] = true;
+            emit GoldlistUpdated(_initialGoldlist[i], true);
+        }
+    }
+
+    // ========================================================
+    // Flow A: registration brokerage
+    // ========================================================
+
+    /// @notice Builds the Registration struct a buyer must hash (via computeCommitment) and
+    /// commit on ETHRegistrarController directly, before calling registerName here. Owner is
+    /// forced to this contract because it must temporarily hold the raw name to wrap it;
+    /// resolver/data/reverseRecord are forced off because proxying them through this contract's
+    /// commit-reveal cycle cannot be proven safe against the registrar's own record-setting
+    /// authorisation checks — buyers set resolver records themselves after they own the wrapped
+    /// name.
+    function buildRegistration(
+        string calldata label,
+        uint256 duration,
+        bytes32 secret,
+        bytes32 referrer
+    ) public view returns (IETHRegistrarController.Registration memory registration) {
+        registration = IETHRegistrarController.Registration({
+            label: label,
+            owner: address(this),
+            duration: duration,
+            secret: secret,
+            resolver: address(0),
+            data: new bytes[](0),
+            reverseRecord: 0,
+            referrer: referrer
+        });
+    }
+
+    /// @notice Convenience view so integrators don't need to hardcode this contract's address
+    /// client-side when building the commitment to pass to ETHRegistrarController.commit().
+    function computeCommitment(
+        string calldata label,
+        uint256 duration,
+        bytes32 secret,
+        bytes32 referrer
+    ) external view returns (bytes32) {
+        return registrarController.makeCommitment(buildRegistration(label, duration, secret, referrer));
+    }
+
+    /// @dev Shared by quoteRegistration/_quoteRegistrationChecked/quoteRenewal/
+    /// _quoteRenewalChecked — the brokerage fee is whichever is larger: the percentage-based fee,
+    /// or the per-year minimum floor scaled to this duration.
+    function _brokerageFeeFor(uint256 basePrice, uint256 duration) internal view returns (uint256) {
+        uint256 pctFee = (basePrice * brokerageBps) / BPS_DENOM;
+        uint256 minFee = (minBrokerageFeePerYear * duration) / 365 days;
+        return pctFee > minFee ? pctFee : minFee;
+    }
+
+    /// @notice Quotes the registrar's own price plus this contract's brokerage fee.
+    function quoteRegistration(
+        string calldata label,
+        uint256 duration
+    ) external view returns (uint256 basePrice, uint256 brokerageFee, uint256 totalPrice) {
+        IPriceOracle.Price memory p = registrarController.rentPrice(label, duration);
+        basePrice = p.base + p.premium;
+        brokerageFee = _brokerageFeeFor(basePrice, duration);
+        totalPrice = basePrice + brokerageFee;
+    }
+
+    /// @notice Registers a name via ETHRegistrarController and wraps it directly to
+    /// `wrappedOwner`. Caller must have already called ETHRegistrarController.commit() with the
+    /// exact commitment returned by computeCommitment(label, duration, secret, referrer), and
+    /// waited out the registrar's minCommitmentAge. `expectedNode` is the wrapped name's ENS
+    /// node (e.g. ethers.namehash("label.<tld>") computed off-chain) — this contract verifies it
+    /// against NameWrapper's own record after wrapping, rather than assuming any particular
+    /// root/TLD itself, and marks it activated so setSubnamePricePerYear/listExistingName work
+    /// immediately.
+    function registerName(
+        string calldata label,
+        uint256 duration,
+        bytes32 secret,
+        bytes32 referrer,
+        address wrappedOwner,
+        uint16 ownerControlledFuses,
+        bytes32 expectedNode
+    ) external payable nonReentrant whenNotPaused returns (uint64 expiry) {
+        require(wrappedOwner != address(0), "Zero wrapped owner");
+
+        (uint256 basePrice, uint256 brokerageFee, uint256 totalRequired) = _quoteRegistrationChecked(label, duration);
+
+        registrarController.register{value: basePrice}(buildRegistration(label, duration, secret, referrer));
+
+        expiry = _wrapAndActivate(label, wrappedOwner, ownerControlledFuses, expectedNode);
+
+        _settleRegistration(brokerageFee, totalRequired);
+
+        emit NameRegistered(msg.sender, label, basePrice, brokerageFee, wrappedOwner, ownerControlledFuses);
+    }
+
+    /// @dev Split out of registerName purely to keep that function's stack usage low enough to
+    /// compile without viaIR (Remix's default codegen). Mirrors quoteRegistration's math.
+    function _quoteRegistrationChecked(
+        string calldata label,
+        uint256 duration
+    ) internal view returns (uint256 basePrice, uint256 brokerageFee, uint256 totalRequired) {
+        IPriceOracle.Price memory p = registrarController.rentPrice(label, duration);
+        basePrice = p.base + p.premium;
+        brokerageFee = _brokerageFeeFor(basePrice, duration);
+        totalRequired = basePrice + brokerageFee;
+        require(msg.value >= totalRequired, "Insufficient payment");
+    }
+
+    /// @dev Split out of registerName for the same reason as _quoteRegistrationChecked. This
+    /// contract is the raw registrant at this point; approve NameWrapper and wrap straight to
+    /// the buyer, then verify/activate expectedNode.
+    function _wrapAndActivate(
+        string calldata label,
+        address wrappedOwner,
+        uint16 ownerControlledFuses,
+        bytes32 expectedNode
+    ) internal returns (uint64 expiry) {
+        uint256 tokenId = uint256(keccak256(bytes(label)));
+        baseRegistrar.approve(address(nameWrapper), tokenId);
+        expiry = nameWrapper.wrapETH2LD(label, wrappedOwner, ownerControlledFuses, defaultResolver);
+
+        require(_firstLabelMatches(nameWrapper.names(expectedNode), label), "expectedNode mismatch");
+        domainActivated[expectedNode] = true;
+    }
+
+    /// @dev Split out of registerName for the same reason as _quoteRegistrationChecked.
+    function _settleRegistration(uint256 brokerageFee, uint256 totalRequired) internal {
+        if (brokerageFee > 0) {
+            (bool ok, ) = projectWallet.call{value: brokerageFee}("");
+            require(ok, "Brokerage transfer failed");
+        }
+
+        uint256 refund = msg.value - totalRequired;
+        if (refund > 0) {
+            (bool ok2, ) = payable(msg.sender).call{value: refund}("");
+            require(ok2, "Refund failed");
+        }
+    }
+
+    /// @notice Quotes the registrar's own renewal price plus this contract's brokerage fee.
+    /// Renewals never carry a premium (unlike fresh registrations) — the real registrar's
+    /// renew() only ever checks against price.base, so this mirrors that exactly rather than
+    /// reusing quoteRegistration's base+premium math.
+    function quoteRenewal(
+        string calldata label,
+        uint256 duration
+    ) external view returns (uint256 basePrice, uint256 brokerageFee, uint256 totalPrice) {
+        IPriceOracle.Price memory p = registrarController.rentPrice(label, duration);
+        basePrice = p.base;
+        brokerageFee = _brokerageFeeFor(basePrice, duration);
+        totalPrice = basePrice + brokerageFee;
+    }
+
+    /// @notice Renews a name via ETHRegistrarController, forwarding the exact base renewal
+    /// price and keeping a brokerage fee on top, same revenue model as registerName. Anyone can
+    /// renew any name (matching the real registrar's own renew(), which isn't ownership-gated).
+    function renewName(
+        string calldata label,
+        uint256 duration,
+        bytes32 referrer
+    ) external payable nonReentrant whenNotPaused returns (uint256 newExpiry) {
+        (uint256 basePrice, uint256 brokerageFee, uint256 totalRequired) = _quoteRenewalChecked(label, duration);
+
+        registrarController.renew{value: basePrice}(label, duration, referrer);
+        newExpiry = baseRegistrar.nameExpires(uint256(keccak256(bytes(label))));
+
+        _settleRenewal(brokerageFee, totalRequired);
+
+        emit NameRenewed(msg.sender, label, basePrice, brokerageFee, newExpiry);
+    }
+
+    /// @dev Split out of renewName for the same stack-depth reason as the registration helpers.
+    /// Mirrors quoteRenewal's math.
+    function _quoteRenewalChecked(
+        string calldata label,
+        uint256 duration
+    ) internal view returns (uint256 basePrice, uint256 brokerageFee, uint256 totalRequired) {
+        IPriceOracle.Price memory p = registrarController.rentPrice(label, duration);
+        basePrice = p.base;
+        brokerageFee = _brokerageFeeFor(basePrice, duration);
+        totalRequired = basePrice + brokerageFee;
+        require(msg.value >= totalRequired, "Insufficient payment");
+    }
+
+    /// @dev Split out of renewName for the same reason as _quoteRenewalChecked.
+    function _settleRenewal(uint256 brokerageFee, uint256 totalRequired) internal {
+        if (brokerageFee > 0) {
+            (bool ok, ) = projectWallet.call{value: brokerageFee}("");
+            require(ok, "Brokerage transfer failed");
+        }
+
+        uint256 refund = msg.value - totalRequired;
+        if (refund > 0) {
+            (bool ok2, ) = payable(msg.sender).call{value: refund}("");
+            require(ok2, "Refund failed");
+        }
+    }
+
+    /// @notice Retroactively activates a name that was registered directly with
+    /// ETHRegistrarController (bypassing this marketplace's brokerage), so its owner can start
+    /// using setSubnamePricePerYear/listExistingName. Fee is brokerageBps of what the registrar would
+    /// charge today to register this exact name for however much time is actually left on it
+    /// (read from NameWrapper), so it can't be gamed by under-declaring duration.
+    function activateDomain(
+        bytes32 node,
+        string calldata label
+    ) external payable nonReentrant whenNotPaused returns (uint256 fee) {
+        bool wasWrapped = _requireNodeOwner(node, label, msg.sender);
+        require(!domainActivated[node], "Already activated");
+
+        // Always computed (preserves _activationFee's own expiry check regardless of goldlist
+        // status — a goldlisted-but-expired name still shouldn't activate), only the CHARGE is
+        // waived for a goldlisted node.
+        uint256 computedFee = _activationFee(node, label);
+        fee = goldlisted[node] ? 0 : computedFee;
+        require(msg.value >= fee, "Insufficient payment");
+
+        // A name registered directly through ETHRegistrarController and never wrapped only gets
+        // as far as this require/fee math via BaseRegistrar fallbacks — nothing downstream of
+        // activation (setSubnamePricePerYear, registerSubname, resale) works without the name
+        // actually being wrapped, since all of that reads NameWrapper directly. So activation
+        // itself now performs the wrap for that case, not just a flag flip.
+        if (!wasWrapped) {
+            _wrapDirectRegistration(label, msg.sender);
+        }
+
+        domainActivated[node] = true;
+        _settleActivation(fee);
+
+        emit DomainActivated(node, msg.sender, fee);
+    }
+
+    /// @dev Names registered directly through ETHRegistrarController but never wrapped — the
+    /// exact case activateDomain exists to handle — have no NameWrapper data at all: ownerOf and
+    /// names() both return zero/empty for them, not "not found". Checking NameWrapper alone (as
+    /// this used to) meant activateDomain could never succeed for a genuinely unwrapped name,
+    /// contradicting its own stated purpose. Checks NameWrapper first (covers a name that's
+    /// already wrapped, e.g. re-checking one already activated), falling back to the raw
+    /// BaseRegistrar registrant for the unwrapped case — verifying label really matches node via
+    /// ETNNamehash instead of nameWrapper.names(node), which is equally unset pre-wrap. Ownership
+    /// and label-match stay separate requires (not one combined bool) so each keeps its own
+    /// distinct revert reason, same as before this fallback existed. Returns whether the name was
+    /// already wrapped at check time, so activateDomain knows whether it still needs wrapping.
+    function _requireNodeOwner(
+        bytes32 node,
+        string calldata label,
+        address account
+    ) internal view returns (bool wasWrapped) {
+        address wrappedOwner = nameWrapper.ownerOf(uint256(node));
+        if (wrappedOwner != address(0)) {
+            require(wrappedOwner == account, "Not name owner");
+            require(_firstLabelMatches(nameWrapper.names(node), label), "Label mismatch");
+            return true;
+        }
+
+        bytes32 labelHash = keccak256(bytes(label));
+        require(baseRegistrar.ownerOf(uint256(labelHash)) == account, "Not name owner");
+        require(ETNNamehash.etnNode(labelHash) == node, "Label mismatch");
+        return false;
+    }
+
+    /// @dev Pulls a directly-registered (never wrapped) name into NameWrapper custody, wrapped
+    /// straight back to its own owner. Mirrors _wrapAndActivate's exact approach for freshly
+    /// registered names (this contract becomes the momentary registrant, then wraps as itself —
+    /// nameWrapper.wrapETH2LD requires registrant == msg.sender, so this contract has to actually
+    /// hold the token to call it, not merely be approved for it) — the only difference is the
+    /// token starts out owned by `owner` instead of freshly registered to this contract, so it
+    /// has to be pulled in first via a standard ERC721 operator transfer. Requires `owner` to have
+    /// already called baseRegistrar.setApprovalForAll(address(this), true); reverts with a clear
+    /// reason if they haven't, rather than surfacing BaseRegistrar's own generic ERC721 revert.
+    function _wrapDirectRegistration(string calldata label, address owner) internal {
+        uint256 tokenId = uint256(keccak256(bytes(label)));
+        require(baseRegistrar.isApprovedForAll(owner, address(this)), "Approve BaseRegistrar first");
+
+        baseRegistrar.transferFrom(owner, address(this), tokenId);
+        baseRegistrar.approve(address(nameWrapper), tokenId);
+        nameWrapper.wrapETH2LD(label, owner, 0, defaultResolver);
+    }
+
+    /// @dev Split out of activateDomain to keep its stack usage low enough to compile without
+    /// viaIR (Remix's default codegen).
+    function _activationFee(bytes32 node, string calldata label) internal view returns (uint256 fee) {
+        (, , uint64 wrappedExpiry) = nameWrapper.getData(uint256(node));
+        uint256 expiry = wrappedExpiry;
+        // Same unwrapped-name gap as _isNodeOwner above — NameWrapper has no expiry recorded for
+        // a name that was never wrapped, so fall back to the real registrar expiry.
+        if (expiry == 0) {
+            expiry = baseRegistrar.nameExpires(uint256(keccak256(bytes(label))));
+        }
+        require(expiry > block.timestamp, "Name expired");
+        uint256 remaining = expiry - block.timestamp;
+
+        IPriceOracle.Price memory p = registrarController.rentPrice(label, remaining);
+        uint256 basePrice = p.base + p.premium;
+        // Was a bare percentage calc — silently skipped the minBrokerageFeePerYear floor that
+        // quoteRegistration/quoteRenewal both correctly apply via this same helper. Confirmed
+        // live: community.etn's activation charged ~2,907 ETN instead of the ~25,000 ETN/year
+        // floor for its ~1 year remaining — an ~8.6x undercharge that would recur on every future
+        // activation, not just that one (rentPrice scales linearly with remaining, so the same
+        // shortfall ratio holds at any duration).
+        fee = _brokerageFeeFor(basePrice, remaining);
+    }
+
+    /// @dev Split out of activateDomain for the same reason as _activationFee.
+    function _settleActivation(uint256 fee) internal {
+        if (fee > 0) {
+            (bool ok, ) = projectWallet.call{value: fee}("");
+            require(ok, "Activation fee transfer failed");
+        }
+
+        uint256 refund = msg.value - fee;
+        if (refund > 0) {
+            (bool ok2, ) = payable(msg.sender).call{value: refund}("");
+            require(ok2, "Refund failed");
+        }
+    }
+
+    /// @notice Same activation as activateDomain, but paid in a whitelisted ERC20 instead of ETN.
+    /// The activation fee itself stays authoritatively denominated in ETN (_activationFee's own
+    /// math, unchanged) — this just converts that ETN amount into `paymentToken` at the router's
+    /// live on-chain rate, via getAmountsOut, at the moment of payment. That's a real market
+    /// rate, not a third-party price feed: no oracle is needed because the router's own reserves
+    /// ARE the price source, read fresh inside this same transaction (the identical pattern
+    /// buyBackAndBurn already relies on for ETN -> CORE, just used here as a quote rather than an
+    /// executed swap — nothing is actually swapped on this path, the token goes straight to
+    /// projectWallet, same 100%-project-revenue treatment activateDomain already gives ETN).
+    ///
+    /// `maxTokenAmount` is the caller's own slippage cap (revert if the live quote wants more than
+    /// they're willing to pay) and `deadline` bounds how long this specific quote is valid for —
+    /// same spirit as buyBackAndBurn's own parameters, just protecting the payer here instead of
+    /// the protocol. Worth being explicit about the trade-off this makes: a spot read from a
+    /// single pool's reserves is, in principle, manipulable within one transaction (e.g. a flash
+    /// loan moving the pool immediately before this call). For an activation fee — a bounded,
+    /// one-off amount, not an ongoing lending/collateral position — that risk is the same class
+    /// already accepted by buyBackAndBurn's own getAmountsOut-adjacent slippage math elsewhere in
+    /// this contract, not a new exposure introduced here.
+    function activateDomainWithToken(
+        bytes32 node,
+        string calldata label,
+        address paymentToken,
+        uint256 maxTokenAmount,
+        uint256 deadline
+    ) external nonReentrant whenNotPaused returns (uint256 tokenAmountPaid) {
+        require(whitelistedPaymentTokens[paymentToken], "Token not whitelisted");
+        require(deadline >= block.timestamp, "Quote expired");
+
+        bool wasWrapped = _requireNodeOwner(node, label, msg.sender);
+        require(!domainActivated[node], "Already activated");
+
+        // Always computed (preserves _activationFee's own expiry check regardless of goldlist
+        // status), only the CHARGE is waived for a goldlisted node — see activateDomain's own
+        // comment on this same pattern.
+        uint256 computedEtnFee = _activationFee(node, label);
+        uint256 etnFee = goldlisted[node] ? 0 : computedEtnFee;
+
+        if (!wasWrapped) {
+            _wrapDirectRegistration(label, msg.sender);
+        }
+        domainActivated[node] = true;
+
+        // A goldlisted (or otherwise free) activation needs no quote and no router at all —
+        // tokenAmountPaid stays 0, nothing to transfer. Only a genuinely non-zero fee needs
+        // swapRouter configured.
+        if (etnFee > 0) {
+            require(swapRouter != address(0), "Swap router not configured");
+            address weth = IUniswapV2Router02Lite(swapRouter).WETH();
+            address[] memory path = new address[](2);
+            path[0] = weth;
+            path[1] = paymentToken;
+            uint256[] memory amounts = IUniswapV2Router02Lite(swapRouter).getAmountsOut(etnFee, path);
+            tokenAmountPaid = amounts[amounts.length - 1];
+            require(tokenAmountPaid <= maxTokenAmount, "Quote exceeds max token amount");
+            require(IERC20(paymentToken).transferFrom(msg.sender, projectWallet, tokenAmountPaid), "Fee transfer failed");
+        }
+
+        emit DomainActivatedWithToken(node, msg.sender, paymentToken, tokenAmountPaid, etnFee);
+    }
+
+    /// @notice Carries a domain's activation status over from legacyMarketplace (V3) for free —
+    /// activation there was already paid for, once, and shouldn't need paying again just because
+    /// the marketplace contract itself moved. Permissionless (anyone can call it for any node,
+    /// not just the domain's own owner) and trustless: it re-reads V3's own domainActivated
+    /// mapping as the objective source of truth rather than trusting an off-chain admin-supplied
+    /// list, so there's no bulk-import step, no gas-limit risk from batching many nodes in one
+    /// tx, and no way for this to mark something activated that wasn't genuinely already paid for
+    /// on V3. Deliberately does NOT carry over subname prices — see this contract's own header
+    /// comment for why that stays each owner's own action, never something a migration sets on
+    /// their behalf.
+    function migrateActivation(bytes32 node) external {
+        require(address(legacyMarketplace) != address(0), "No legacy marketplace configured");
+        require(!domainActivated[node], "Already activated on this contract");
+        require(legacyMarketplace.domainActivated(node), "Not activated on legacy marketplace");
+        domainActivated[node] = true;
+        emit ActivationMigrated(node);
+    }
+
+    /// @dev Compares the first (leftmost) DNS-wire-encoded label in `encoded` against `label`,
+    /// without assuming anything about what follows it (the TLD/root). Used to verify a
+    /// caller-supplied node/label pair against NameWrapper's own authoritative record.
+    function _firstLabelMatches(bytes memory encoded, string calldata label) internal pure returns (bool) {
+        bytes memory labelBytes = bytes(label);
+        if (encoded.length < 1 + labelBytes.length) return false;
+        if (uint8(encoded[0]) != labelBytes.length) return false;
+        for (uint256 i = 0; i < labelBytes.length; i++) {
+            if (encoded[1 + i] != labelBytes[i]) return false;
+        }
+        return true;
+    }
+
+    // ========================================================
+    // Flow B: subname self-serve registration + resale marketplace
+    // ========================================================
+
+    /// @notice Sets (or clears, with pricePerYear=0) the per-year price, in `paymentToken`
+    /// (address(0) = ETN), for self-serve subname registration under a domain the caller
+    /// owns/controls. Requires the domain to already be activated. Each payment token's price is
+    /// independent — setting/clearing one currency's listing never touches any other's, so a
+    /// domain can be for sale in several currencies at once (e.g. 1000 ETN AND 500 CORE).
+    function setSubnamePricePerYear(bytes32 parentNode, address paymentToken, uint256 pricePerYear) external whenNotPaused {
+        require(domainActivated[parentNode], "Domain not activated");
+        require(nameWrapper.canModifyName(parentNode, msg.sender), "Not parent owner/operator");
+        require(paymentToken == address(0) || whitelistedPaymentTokens[paymentToken], "Token not whitelisted");
+        require(pricePerYear == 0 || pricePerYear >= minSubnamePricePerYear[paymentToken], "Below minimum price");
+        subnamePricePerYear[parentNode][paymentToken] = pricePerYear;
+        emit SubnamePricePerYearSet(parentNode, paymentToken, pricePerYear);
+    }
+
+    /// @notice Quotes what `duration` seconds of a subname under `parentNode` costs, in
+    /// `paymentToken`, at its current per-year rate. No external calls, so registerSubname can
+    /// call this directly (unlike quoteRegistration/_quoteRegistrationChecked's duplication,
+    /// which exists specifically because that math calls out to registrarController.rentPrice
+    /// and needs the stack headroom).
+    function quoteSubname(bytes32 parentNode, address paymentToken, uint256 duration) public view returns (uint256 price) {
+        price = (subnamePricePerYear[parentNode][paymentToken] * duration) / 365 days;
+    }
+
+    /// @notice Self-serve subname registration: buyer picks the label, duration, and which of the
+    /// parent owner's listed currencies to pay in, then pays that currency's per-year rate scaled
+    /// to duration — the subname is created and wrapped directly to the buyer. Same 80/20
+    /// seller/burn split as buyListing, via _settleSale, just settled in whichever currency was
+    /// actually used. The new subname is itself immediately activated, so its new owner can set
+    /// their own subname price / resell it right away.
+    ///
+    /// For an ERC20 paymentToken, the caller must have already called
+    /// IERC20(paymentToken).approve(address(this), price) (or more) — same shape as every other
+    /// ERC20 spend-approval already required elsewhere in this app (e.g. NameWrapper's
+    /// setApprovalForAll for listings). msg.value must be exactly 0 in that case; ETN sent
+    /// alongside an ERC20-denominated purchase would just be stuck, so this is rejected outright
+    /// rather than silently accepted.
+    function registerSubname(
+        bytes32 parentNode,
+        string calldata label,
+        uint256 duration,
+        address paymentToken
+    ) external payable nonReentrant whenNotPaused returns (bytes32 subNode) {
+        require(duration > 0 && duration <= MAX_SUBNAME_DURATION, "Invalid duration");
+        require(paymentToken == address(0) || whitelistedPaymentTokens[paymentToken], "Token not whitelisted");
+        uint256 price = quoteSubname(parentNode, paymentToken, duration);
+        require(price > 0, "Subnames not for sale in this token");
+        if (paymentToken == address(0)) {
+            require(msg.value >= price, "Insufficient payment");
+        } else {
+            require(msg.value == 0, "Unexpected ETN sent");
+        }
+
+        address seller = nameWrapper.ownerOf(uint256(parentNode));
+        subNode = _fulfillSubname(parentNode, label, seller, duration);
+
+        (uint256 sellerAmount, uint256 burnAmount) = _settleSale(seller, price, paymentToken);
+
+        emit SubnameRegistered(parentNode, label, msg.sender, paymentToken, price, sellerAmount, burnAmount);
+    }
+
+    /// @dev Split out of registerSubname to keep its stack usage low enough to compile without
+    /// viaIR (Remix's default codegen).
+    function _fulfillSubname(
+        bytes32 parentNode,
+        string calldata label,
+        address seller,
+        uint256 duration
+    ) internal returns (bytes32 subNode) {
+        require(nameWrapper.canModifyName(parentNode, seller), "Parent owner lost control");
+        require(nameWrapper.isApprovedForAll(seller, address(this)), "Marketplace not approved by parent owner");
+
+        (, , uint64 parentExpiry) = nameWrapper.getData(uint256(parentNode));
+        uint64 expiry = uint64(block.timestamp + duration);
+        require(expiry <= parentExpiry, "Duration exceeds parent expiry");
+
+        subNode = nameWrapper.setSubnodeRecord(parentNode, label, msg.sender, defaultResolver, 0, 0, expiry);
+        domainActivated[subNode] = true;
+    }
+
+    /// @notice Lists an already-wrapped name/subname the caller owns for resale. Caller must
+    /// have called nameWrapper.setApprovalForAll(marketplace, true).
+    function listExistingName(uint256 tokenId, uint256 price) external whenNotPaused returns (uint256 listingId) {
+        require(price > 0, "Price required");
+        require(domainActivated[bytes32(tokenId)], "Domain not activated");
+        require(nameWrapper.ownerOf(tokenId) == msg.sender, "Not token owner");
+        require(nameWrapper.isApprovedForAll(msg.sender, address(this)), "Marketplace not approved");
+
+        listingId = nextListingId++;
+        listings[listingId] = Listing({
+            seller: msg.sender,
+            tokenId: tokenId,
+            price: price,
+            active: true
+        });
+
+        emit ExistingNameListed(listingId, msg.sender, tokenId, price);
+    }
+
+    function cancelListing(uint256 listingId) external {
+        Listing storage l = listings[listingId];
+        require(l.active, "Not active");
+        require(l.seller == msg.sender || msg.sender == owner(), "Not authorised");
+        l.active = false;
+        emit ListingCancelled(listingId);
+    }
+
+    /// @notice Buys an active listing, transferring the existing NameWrapper token from seller
+    /// to buyer. Every sale splits 80% seller / 20% burn pool.
+    function buyListing(uint256 listingId) external payable nonReentrant whenNotPaused {
+        Listing storage l = listings[listingId];
+        require(l.active, "Not active");
+        require(msg.value >= l.price, "Insufficient payment");
+
+        address seller = l.seller;
+        uint256 price = l.price;
+        l.active = false; // effects before interactions
+
+        nameWrapper.safeTransferFrom(seller, msg.sender, l.tokenId, 1, "");
+
+        (uint256 sellerAmount, uint256 burnAmount) = _settleSale(seller, price, address(0));
+
+        emit ListingSold(listingId, msg.sender, seller, price, sellerAmount, burnAmount);
+    }
+
+    /// @dev Split out of buyListing/registerSubname for the same stack-depth reason as the other
+    /// flows. buyListing always passes address(0) (resale stays ETN-only, unchanged from V3);
+    /// registerSubname passes whichever currency the buyer actually chose.
+    function _settleSale(address seller, uint256 price, address paymentToken) internal returns (uint256 sellerAmount, uint256 burnAmount) {
+        sellerAmount = (price * SELLER_BPS) / BPS_DENOM;
+        burnAmount = price - sellerAmount;
+
+        if (paymentToken == address(0)) {
+            burnPool += burnAmount;
+
+            (bool ok, ) = payable(seller).call{value: sellerAmount}("");
+            require(ok, "Seller payment failed");
+
+            uint256 refund = msg.value - price;
+            if (refund > 0) {
+                (bool ok2, ) = payable(msg.sender).call{value: refund}("");
+                require(ok2, "Refund failed");
+            }
+        } else {
+            erc20BurnPool[paymentToken] += burnAmount;
+
+            // Two separate transferFrom calls (not one transferFrom-to-self then an internal
+            // forward) deliberately — a fee-on-transfer ERC20 whitelisted here would otherwise
+            // have its transfer fee deducted once from the FULL price and then silently misapply
+            // across both legs; splitting the calls means each leg's fee (if any) is deducted
+            // only from that leg, matching what "80/20 of price" is supposed to mean regardless
+            // of the token's own transfer behavior.
+            require(IERC20(paymentToken).transferFrom(msg.sender, seller, sellerAmount), "Seller payment failed");
+            require(IERC20(paymentToken).transferFrom(msg.sender, address(this), burnAmount), "Burn pool transfer failed");
+        }
+    }
+
+    // ========================================================
+    // CORE buyback and burn
+    // ========================================================
+
+    /// @notice Swaps the accumulated burn pool for CORE and burns it via CORE.burn(). Owner-only
+    /// and slippage-guarded by the caller-supplied minCoreOut, matching the manual-trigger
+    /// pattern already used by this repo's other fee-reflection contracts.
+    function buyBackAndBurn(uint256 minCoreOut, uint256 deadline) external onlyOwner nonReentrant {
+        require(coreToken != address(0) && swapRouter != address(0), "Buyback not configured");
+        uint256 amount = burnPool;
+        require(amount > 0, "Nothing to burn");
+        burnPool = 0;
+
+        address[] memory path = new address[](2);
+        path[0] = IUniswapV2Router02Lite(swapRouter).WETH();
+        path[1] = coreToken;
+
+        uint256 balanceBefore = IERC20(coreToken).balanceOf(address(this));
+
+        IUniswapV2Router02Lite(swapRouter).swapExactETHForTokensSupportingFeeOnTransferTokens{value: amount}(
+            minCoreOut,
+            path,
+            address(this),
+            deadline
+        );
+
+        uint256 received = IERC20(coreToken).balanceOf(address(this)) - balanceBefore;
+        require(received > 0, "Swap failed");
+
+        IBurnableERC20(coreToken).burn(received);
+        totalCoreBurned += received;
+
+        emit BuybackAndBurn(address(0), amount, received);
+    }
+
+    /// @notice Swaps one whitelisted ERC20's accumulated burn pool for CORE and burns it —
+    /// the ERC20 counterpart to buyBackAndBurn above, one token at a time (each pool needs its
+    /// own swap path, so there's no single call that drains every token's pool at once). Routes
+    /// token -> WETN -> CORE explicitly: a UniswapV2-style router never auto-routes, the caller
+    /// always supplies the exact hop path, and WETN is read from the router itself (same WETH()
+    /// call the ETN path already makes) rather than stored separately. If the whitelisted token
+    /// IS coreToken itself, there's nothing to swap — the 20% cut is already CORE — so that case
+    /// skips the router entirely and burns directly.
+    function buyBackAndBurnToken(address token, uint256 minCoreOut, uint256 deadline) external onlyOwner nonReentrant {
+        require(coreToken != address(0), "CORE token not configured");
+        uint256 amount = erc20BurnPool[token];
+        require(amount > 0, "Nothing to burn");
+        erc20BurnPool[token] = 0;
+
+        if (token == coreToken) {
+            IBurnableERC20(coreToken).burn(amount);
+            totalCoreBurned += amount;
+            emit BuybackAndBurn(token, amount, amount);
+            return;
+        }
+
+        // Only the swap path (not the CORE-direct fast path above) actually needs a router.
+        require(swapRouter != address(0), "Swap router not configured");
+        address weth = IUniswapV2Router02Lite(swapRouter).WETH();
+        address[] memory path = new address[](3);
+        path[0] = token;
+        path[1] = weth;
+        path[2] = coreToken;
+
+        uint256 balanceBefore = IERC20(coreToken).balanceOf(address(this));
+
+        IERC20(token).approve(swapRouter, amount);
+        IUniswapV2Router02Lite(swapRouter).swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            amount,
+            minCoreOut,
+            path,
+            address(this),
+            deadline
+        );
+
+        uint256 received = IERC20(coreToken).balanceOf(address(this)) - balanceBefore;
+        require(received > 0, "Swap failed");
+
+        IBurnableERC20(coreToken).burn(received);
+        totalCoreBurned += received;
+
+        emit BuybackAndBurn(token, amount, received);
+    }
+
+    // ========================================================
+    // Admin
+    // ========================================================
+
+    function setBrokerageBps(uint256 _brokerageBps) external onlyOwner {
+        require(_brokerageBps <= MAX_BROKERAGE_BPS, "Brokerage too high");
+        brokerageBps = _brokerageBps;
+        emit BrokerageBpsUpdated(_brokerageBps);
+    }
+
+    function setMinBrokerageFeePerYear(uint256 _minBrokerageFeePerYear) external onlyOwner {
+        minBrokerageFeePerYear = _minBrokerageFeePerYear;
+        emit MinBrokerageFeePerYearUpdated(_minBrokerageFeePerYear);
+    }
+
+    function setProjectWallet(address payable _projectWallet) external onlyOwner {
+        require(_projectWallet != address(0), "Zero address");
+        projectWallet = _projectWallet;
+        emit ProjectWalletUpdated(_projectWallet);
+    }
+
+    function setDefaultResolver(address _resolver) external onlyOwner {
+        defaultResolver = _resolver;
+        emit DefaultResolverUpdated(_resolver);
+    }
+
+    function setCoreToken(address _coreToken) external onlyOwner {
+        coreToken = _coreToken;
+        emit CoreTokenUpdated(_coreToken);
+    }
+
+    function setSwapRouter(address _swapRouter) external onlyOwner {
+        swapRouter = _swapRouter;
+        emit SwapRouterUpdated(_swapRouter);
+    }
+
+    function setPaused(bool _paused) external onlyOwner {
+        paused = _paused;
+        emit PausedUpdated(_paused);
+    }
+
+    /// @notice Adds or removes an ERC20 from the set domain owners may price/sell subnames in
+    /// (setSubnamePricePerYear/registerSubname) and pay activation fees in
+    /// (activateDomainWithToken). Not a fixed list anywhere else in this contract — every check
+    /// reads this mapping live, so revoking a token immediately stops new listings/sales in it
+    /// without needing to touch anything already sold (existing erc20BurnPool[token] balances and
+    /// past sales are unaffected either way).
+    function setPaymentTokenWhitelisted(address token, bool allowed) external onlyOwner {
+        require(token != address(0), "ETN is implicitly whitelisted");
+        whitelistedPaymentTokens[token] = allowed;
+        emit PaymentTokenWhitelisted(token, allowed);
+    }
+
+    /// @notice Sets the per-year price floor for `token` (address(0) = ETN). A domain owner's
+    /// setSubnamePricePerYear call for that token must clear this floor (or be exactly 0, meaning
+    /// "not for sale") — same non-hardcoded, owner-adjustable-as-values-move design as
+    /// minBrokerageFeePerYear, just one floor per token instead of a single global value.
+    function setMinSubnamePricePerYear(address token, uint256 minPricePerYear) external onlyOwner {
+        minSubnamePricePerYear[token] = minPricePerYear;
+        emit MinSubnamePricePerYearUpdated(token, minPricePerYear);
+    }
+
+    /// @notice Exempts (or un-exempts) `node` from the activation fee entirely — see this
+    /// contract's own header comment for why this exists. Does NOT skip activateDomain/
+    /// activateDomainWithToken's ownership verification or wrapping logic, only the fee; a
+    /// goldlisted node still needs its real owner to call one of those functions (or be seeded
+    /// pre-activated via the constructor instead, if the deployer prefers to skip that call too).
+    function setGoldlisted(bytes32 node, bool status) external onlyOwner {
+        goldlisted[node] = status;
+        emit GoldlistUpdated(node, status);
+    }
+
+    /// @notice Rescues ERC20 tokens accidentally sent to this contract. Unlike V3 (whose burn
+    /// pool was ETN-only, so this could never touch marketplace funds at all), V4 genuinely does
+    /// hold ERC20 balances belonging to erc20BurnPool — this is capped to whatever's ABOVE that
+    /// reserved amount for the given token, so the owner can still recover a stray/mistaken
+    /// transfer without being able to sweep real burn-pool funds under the same function.
+    function rescueTokens(address token, uint256 amount, address to) external onlyOwner {
+        require(to != address(0), "Zero address");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        uint256 reserved = erc20BurnPool[token];
+        require(balance >= reserved, "Balance below reserved burn pool");
+        require(amount <= balance - reserved, "Would touch burn pool funds");
+        require(IERC20(token).transfer(to, amount), "Rescue transfer failed");
+        emit TokensRescued(token, amount, to);
+    }
+}
