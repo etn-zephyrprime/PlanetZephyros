@@ -77,6 +77,16 @@ module.exports = {
           evmVersion: "london",
         },
       },
+      // Same Electroneum testnet EVM constraint as V4 above (see that comment) — V5 is a
+      // superset of V4's own logic, so it needs the identical override for the identical reason.
+      "contracts/subnames/PlanetZephyrosSubdomainServiceV5.sol": {
+        version: SOLC_VERSION,
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true,
+          evmVersion: "london",
+        },
+      },
       // Same Electroneum testnet EVM constraint as the marketplace above (see that comment) —
       // this contract's own logic needs nothing newer than London, so it gets the same override
       // rather than risking a PUSH0/MCOPY opcode from the default cancun target.
