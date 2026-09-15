@@ -24,7 +24,7 @@
 // a one-time/locked-in decision.
 import { ethers } from 'ethers'
 
-const MARKETPLACE_ADDRESS: string = '' // TODO: fill in with the address deployMarketplaceV5_mainnet_remix.ts printed
+const MARKETPLACE_ADDRESS: string = '0x2ac8363A60CB054A948CFdf8b34F3813E4528AE7' // the real, live, verified V5 deployment
 
 // Same values already verified live on PremiumSubscription and V3/V4 (setupMainnetCoreBuyback_remix.ts).
 const CORE_TOKEN_ADDRESS = '0x309B916b3A90cb3E071697Ea9680e9217A30066f'
